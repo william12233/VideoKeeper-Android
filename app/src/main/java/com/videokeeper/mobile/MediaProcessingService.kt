@@ -84,10 +84,10 @@ class MediaProcessingService : Service() {
         val notification = buildNotification(message, progress)
         when {
             Build.VERSION.SDK_INT >= 35 -> {
-                // Android 15's long-running video path. The matching manifest
-                // permission and service type are both declared above.
-                ServiceCompat.startForeground(
-                    this,
+                // AndroidX Core 1.16's ServiceCompat API-34 shim masks future
+                // service-type bits. Calling the Android 15+ platform overload
+                // directly is required or mediaProcessing becomes type none.
+                startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
