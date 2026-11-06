@@ -1,20 +1,21 @@
-# 影片管家 — Codex Android 原生版交付專案
+# 影片管家 Android 專案說明
 
-這份 ZIP 是 **從先前 Android v1.0 原始碼延伸的可開發起始專案**，不是已完成實機驗證的正式 APK。內附完整的既有裁切、去重、批次與檔案介面程式，以及 Web 品牌素材、Android adaptive icons、GitHub Actions 和兩階段 Codex 完整任務指令。Codex 需要依需求重構與驗證後才能發布。目前已改用官方 Gradle 8.13 Wrapper，來源與 SHA-256 見 `docs/BUILD_VALIDATION.md`。
+這是 VideoKeeper 的 Android 原生 Repository。請先閱讀 `AGENTS.md`；`design-reference/` 保存原 Web 版的色系、操作概念和 Logo 資產，App 本身使用 Compose 原生介面，不包裝 WebView。
 
-## GitHub 操作
-1. 在自己的 GitHub 建立一個新 Public Repository：`VideoKeeper-Android`；不要勾選 Initialize with README/License/.gitignore（因 ZIP 已有）。
-2. 將本 ZIP 解壓縮後，**上傳解壓縮後的目錄內容**到 Repository 根目錄；GitHub repo 根目錄必須看見 `settings.gradle.kts`, `app/`, `AGENTS.md`, `.github/workflows/`。不要只上傳 ZIP 一個檔案。
-3. 在 Codex Cloud（網頁/桌面版）建立 environment，選取這個 repository，貼上 `CODEX_01_建立環境.txt`，檢查結果後 Publish。
-4. 建立新的 Codex Cloud Task，貼上 `CODEX_02_發布環境後的正式開發任務.txt`。等它發出 PR／ commits、CI 通過後才建立版本 tag。
-5. 正式發佈需要固定的 Android Release 簽章金鑰；請依 `docs/RELEASE_SIGNING.md` 加入 4 個 GitHub Actions Secrets。**不要把 JKS 或密碼上傳 GitHub Repository。**
+主要程式位於 `app/src/main/java/com/videokeeper/mobile/`：
 
-## Repo 檔案導覽
-- `app/`: Android Kotlin 原始碼與轉檔、指紋比對基礎實作。
-- `design-reference/`: 先前 Web 版的公開 UI 參考原始碼；不包含私人影片或測試樣片。
-- `app/src/main/res/mipmap-*/`, `mipmap-anydpi-v26/`, `drawable/`: 從 Web 左上角 Logo 製作的應用 icon，包含舊版 PNG 與 Android 8+ adaptive icon。
-- `.github/workflows/build-apk.yml`: PR/commit 建置 Debug APK、單元測試。
-- `.github/workflows/release.yml`: 以 git tag 發布簽章 APK，沒有 secrets 會阻止發布。
-- `AGENTS.md`: Codex 工程規範。
+- `VideoKeeperApp.kt` / `Theme.kt`：繁體中文 Material 3 UI。
+- `VideoKeeperViewModel.kt`：SAF 匯入、掃描、分析、去重、CSV 與佇列狀態。
+- `Analyzer.kt` / `BlackBarDetector.kt`：低記憶體抽樣、黑邊安全決策、指紋與第二階段畫面驗證。
+- `ExportQueue.kt` / `MediaProcessingService.kt`：Media3 Transformer 硬體-only 輸出與 Android 15 mediaProcessing 背景服務。
+- `FingerprintDatabase.kt`：Room 本機指紋快取。
 
-**目前驗證**：Cloud VM 已完成 4 項單元測試及 Debug APK 編譯，Debug 簽章驗證通過。完整版本、雜湊與限制見 `docs/BUILD_VALIDATION.md`。影片解碼、裁切、匯出及硬體效能仍需實機驗證；本階段未發布正式 Release。
+Debug APK 由 `.github/workflows/build-apk.yml` 在每次 push/PR 建置並上傳 artifact。正式 `release.yml` 保留固定簽章流程，只有 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 四個 Secrets 都存在且 APK 簽章驗證成功時才發布；目前未設定 Secrets 時不得發布正式版。
+
+本地驗證指令：
+
+```sh
+./gradlew :app:testDebugUnitTest :app:compileDebugAndroidTestKotlin :app:lintDebug :app:assembleDebug --stacktrace
+```
+
+請不要提交 `local.properties`、JKS、keystore、密碼、Token、APK 或私人影片。沒有 emulator/實體手機時，只能回報單元測試、Android test 編譯與 APK 建置，不得宣稱硬體轉檔速度或真實影片輸出已驗證。

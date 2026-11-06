@@ -1,0 +1,26 @@
+# 影片管家 VideoKeeper v1.0.0
+
+## 安裝
+
+1. 從 GitHub Release 下載已簽章的 `VideoKeeper-v1.0.0.apk`。
+2. 在 Android 允許目前使用的檔案管理器或瀏覽器安裝未知來源 App。
+3. 開啟影片管家，使用 Android 系統選擇器授權影片或資料夾；App 不需要整機檔案管理權限。
+4. 建議先用一支可備份的影片測試輸出，再批次加入工作佇列。
+
+## 本版功能
+
+- Jetpack Compose Material 3 繁體中文介面與既有 VideoKeeper 品牌圖示。
+- SAF 多影片／資料夾與子資料夾匯入，持久化 URI 授權與影片 metadata/縮圖。
+- 多時間點穩健黑邊偵測、旋轉／全黑／低亮度／動態背景安全閘門、人工裁切滑桿與雙預覽。
+- AndroidX Media3 Transformer + OpenGL Crop；輸出前檢查硬體解碼器、H.264/AAC 編碼器，拒絕軟體 fallback。
+- Android 15 `mediaProcessing` Foreground Service 循序佇列、取消、進度、實際耗時/速度與輸出軌完整性檢查。
+- Room 本機內容指紋快取、pHash/dHash/亮度色彩候選、時間偏移與 SSIM 等效畫面驗證、分組與 CSV 報告。
+- 原始影片不會被覆蓋、刪除或上傳；失敗輸出會清除。
+
+## 已知限制
+
+- 實際可用的編碼格式、HDR 行為與硬體速度依手機 MediaCodec 實作而定；沒有硬體路徑時會明確失敗，不會改用 CPU 慢速轉碼。
+- 本版本預設 H.264/AAC MP4；HEVC 不會在沒有裝置實測優勢時自動切換。
+- 動態模糊邊、有色邊、內容本身很暗、旋轉 metadata 或有效畫格不足的影片會要求人工確認或標記無法分析。
+- 去重是抽樣與有限時間偏移的內容驗證，不是逐幀證明；請在刪除或保留前人工播放確認。App 沒有自動刪除功能。
+- 本次 CI 已完成單元測試、Android test APK 編譯與 Debug APK 建置；沒有可用的 Android emulator/實體硬體，因此硬體轉檔速度、HDR、真實手機輸出仍需使用者在手機上驗證。

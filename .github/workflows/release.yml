@@ -2,6 +2,12 @@ name: Signed APK Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要發布的既有 tag，例如 v1.0.0'
+        required: true
+        type: string
 permissions:
   contents: write
 jobs:
@@ -10,6 +16,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -26,6 +34,19 @@ jobs:
           KP: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           test -n "$KS" && test -n "$KSP" && test -n "$KA" && test -n "$KP" || { echo 'Missing Android signing secrets'; exit 1; }
+      - name: Resolve release tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$INPUT_TAG"
+            git fetch --tags --force
+            git rev-parse "refs/tags/$INPUT_TAG" >/dev/null
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          fi
       - name: Restore signing keystore
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -47,13 +68,14 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
           mkdir -p release
-          cp "$APK" "release/VideoKeeper-${GITHUB_REF_NAME}.apk"
-          (cd release && sha256sum "VideoKeeper-${GITHUB_REF_NAME}.apk" > SHA256SUMS.txt)
+          cp "$APK" "release/VideoKeeper-${{ steps.tag.outputs.tag }}.apk"
+          (cd release && sha256sum "VideoKeeper-${{ steps.tag.outputs.tag }}.apk" > SHA256SUMS.txt)
+          cp docs/RELEASE_NOTES_v1.0.0.md release/更新日誌與安裝說明.md
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* \
-            --title "影片管家 ${GITHUB_REF_NAME}" \
-            --generate-notes \
+          gh release create "${{ steps.tag.outputs.tag }}" release/* \
+            --title "影片管家 ${{ steps.tag.outputs.tag }}" \
+            --notes-file docs/RELEASE_NOTES_v1.0.0.md \
             --verify-tag
