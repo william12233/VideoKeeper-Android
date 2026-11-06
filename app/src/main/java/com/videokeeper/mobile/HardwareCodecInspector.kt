@@ -11,14 +11,16 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 
 /**
- * Hardware-only gate for the export path. Transformer is never started until this gate passes.
+ * Hardware gate for the video export path. Audio is intentionally not part of
+ * the hardware-only gate: compatible AAC is transmuxed, and incompatible audio
+ * may use Media3's AAC software encoder when the user has allowed that fallback.
  */
 object HardwareCodecInspector {
     const val H264 = "video/avc"
     const val HEVC = "video/hevc"
     const val AAC = "audio/mp4a-latm"
 
-    fun inspect(context: Context, uri: Uri, requireAudio: Boolean): HardwareCapability {
+    fun inspect(context: Context, uri: Uri): HardwareCapability {
         val tracks = readTracks(context, uri)
         val sourceMime = tracks.firstOrNull { it.startsWith("video/") }
         if (sourceMime == null) {
@@ -39,13 +41,7 @@ object HardwareCodecInspector {
             )
         }
         val audioMime = tracks.firstOrNull { it.startsWith("audio/") }
-        val audioEncoder = if (requireAudio && audioMime != null) codecInfos(AAC, true).firstOrNull() else null
-        if (requireAudio && audioMime != null && audioEncoder == null) {
-            return HardwareCapability(
-                sourceMime, decoder.name, encoder.name, null, false,
-                "來源含音訊，但裝置沒有 AAC 硬體編碼器；為避免無聲輸出已停止"
-            )
-        }
+        val audioEncoder = if (audioMime != null) codecInfos(AAC, true).firstOrNull() else null
         return HardwareCapability(
             sourceMime = sourceMime,
             decoderName = decoder.name,
@@ -54,11 +50,16 @@ object HardwareCodecInspector {
             supported = true,
             reason = if (audioMime == null) {
                 "硬體解碼／H.264 編碼可用；來源沒有音訊軌"
+            } else if (canCopyAudio(audioMime)) {
+                "硬體影片路徑可用；AAC 音訊將優先直接複製"
             } else {
-                "硬體解碼／H.264／AAC 路徑可用"
+                "硬體影片路徑可用；非 AAC 音訊必要時以 AAC 軟體編碼"
             }
         )
     }
+
+    fun canCopyAudio(audioMime: String?): Boolean =
+        audioMime?.equals(AAC, ignoreCase = true) == true
 
     fun hardwareEncoderNames(mime: String): List<String> = codecInfos(mime, true).map { it.name }
 

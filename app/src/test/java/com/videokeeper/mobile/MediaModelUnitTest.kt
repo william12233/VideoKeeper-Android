@@ -23,4 +23,10 @@ class MediaModelUnitTest {
         val frames = listOf(FrameSignature(-1L, 42L, 3, 122, 17), FrameSignature(9L, -8L, 4, 90, 28, false))
         assertEquals(frames, FingerprintCodec.decode(FingerprintCodec.encode(frames)))
     }
+
+    @Test fun aacAudioIsCopiedAndOtherAudioCanUseFallbackEncoding() {
+        assertTrue(HardwareCodecInspector.canCopyAudio(HardwareCodecInspector.AAC))
+        assertTrue(!HardwareCodecInspector.canCopyAudio("audio/opus"))
+        assertTrue(!HardwareCodecInspector.canCopyAudio(null))
+    }
 }

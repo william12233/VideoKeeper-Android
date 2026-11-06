@@ -428,7 +428,7 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         val encoders = HardwareCodecInspector.hardwareEncoderNames(HardwareCodecInspector.H264)
         val decoders = HardwareCodecInspector.hardwareDecoderNames(HardwareCodecInspector.H264)
         val audio = HardwareCodecInspector.hardwareEncoderNames(HardwareCodecInspector.AAC)
-        return "H.264 硬體編碼器 ${encoders.size} 個、解碼器 ${decoders.size} 個；AAC 硬體編碼器 ${audio.size} 個"
+        return "H.264 硬體編碼器 ${encoders.size} 個、解碼器 ${decoders.size} 個；AAC 硬體編碼器 ${audio.size} 個（音訊優先複製，必要時可軟編碼）"
     }
 
     private fun startOperation(initial: String, block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {

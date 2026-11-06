@@ -1,6 +1,6 @@
 # 影片管家 VideoKeeper Android
 
-原生 Kotlin + Jetpack Compose Material 3 的離線影片工具。支援 Android 9（API 28）以上，使用 AndroidX Media3 Transformer 1.11.1；不使用 WebView、FFmpeg、WebCodecs、MediaRecorder 或 CPU 軟體轉碼 fallback。
+原生 Kotlin + Jetpack Compose Material 3 的離線影片工具。支援 Android 9（API 28）以上，使用 AndroidX Media3 Transformer 1.11.1；不使用 WebView、FFmpeg、WebCodecs 或 MediaRecorder。影片畫面維持硬體 H.264 路徑；音訊優先直接複製，非相容音訊才允許 AAC 軟體編碼。
 
 ## 已完成功能
 
@@ -8,7 +8,7 @@
 - 顯示縮圖、檔名、相對路徑、解析度、片長、fps、編碼、容量與分析狀態。
 - 多時間點低解析度抽樣的左右黑邊辨識：排除片頭/片尾全黑、低亮度、彩色邊、動態背景、旋轉 metadata 和直式來源；不確定時只要求人工確認。
 - 原始畫面裁切框與藍灰外框的裁切後預覽；左右滑桿、時間點、重設偵測值、偶數輸出尺寸預估。
-- Media3 Transformer OpenGL `Crop`、硬體解碼器/編碼器 preflight、H.264/AAC MP4、音訊與輸出軌完整性驗證；沒有可用硬體路徑會清楚失敗，不會偷偷切換慢速模式。
+- Media3 Transformer OpenGL `Crop`、硬體解碼器/H.264 影片編碼器 preflight、H.264 MP4；AAC 音訊優先直接複製，非相容音訊才使用 AAC（可接受軟體音訊編碼），並驗證音訊與輸出軌完整性。
 - Android 15 `mediaProcessing` Foreground Service：循序批次佇列、進度、取消、失敗略過、通知、真正完成後的耗時與速度倍數。
 - Room 本機內容指紋快取；pHash、dHash、亮度/色彩特徵、有限時間偏移、SSIM 等效畫面驗證、相似影片分組、品質比較與 CSV 匯出；沒有自動刪除功能。
 - 沿用 Web 左上角 Logo 的 adaptive icon、monochrome vector 與 PNG launcher assets。

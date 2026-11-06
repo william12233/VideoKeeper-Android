@@ -83,8 +83,7 @@ class ExportQueue(
             val capability = runCatching {
                 HardwareCodecInspector.inspect(
                     context,
-                    android.net.Uri.parse(item.uriString),
-                    requireAudio = info?.hasAudio == true
+                    android.net.Uri.parse(item.uriString)
                 )
             }.getOrElse {
                 HardwareCapability(null, null, null, null, false, "硬體能力檢查失敗：${it.message}")
@@ -134,13 +133,19 @@ class ExportQueue(
             )
             .build()
         try {
-            transformer = Transformer.Builder(context)
+            val transformerBuilder = Transformer.Builder(context)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
-                .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .setPortraitEncodingEnabled(true)
                 .setAssetLoaderFactory(DefaultAssetLoaderFactory(context, decoderFactory, Clock.DEFAULT, null))
                 .setEncoderFactory(encoderFactory)
-                .addListener(object : Transformer.Listener {
+            // Leaving the audio MIME type unset lets Transformer transmux a
+            // compatible AAC track. For other audio codecs, request AAC and
+            // allow Media3's normal audio encoder selection, including software
+            // AAC when the device has no hardware AAC encoder.
+            if (info?.hasAudio == true && !HardwareCodecInspector.canCopyAudio(info.audioMime)) {
+                transformerBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC)
+            }
+            transformer = transformerBuilder.addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         transformer = null
                         if (cancelled) {
@@ -151,14 +156,6 @@ class ExportQueue(
                         if (!HardwareCodecInspector.isHardwareCodecName(exportResult.videoEncoderName)) {
                             output.delete()
                             failCurrent("實際輸出未使用硬體 H.264 編碼器，已拒絕檔案")
-                            return
-                        }
-                        if (info?.hasAudio == true &&
-                            exportResult.audioConversionProcess == ExportResult.CONVERSION_PROCESS_TRANSCODED &&
-                            !HardwareCodecInspector.isHardwareCodecName(exportResult.audioEncoderName)
-                        ) {
-                            output.delete()
-                            failCurrent("實際輸出未使用硬體 AAC 編碼器，已拒絕可能無聲的檔案")
                             return
                         }
                         copyAndValidate(item, info, output, exportResult)

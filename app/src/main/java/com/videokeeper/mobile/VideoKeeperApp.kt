@@ -353,7 +353,7 @@ private fun CropScreen(vm: VideoKeeperViewModel, startExport: () -> Unit) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("已選取 $selectedCount 支可裁切影片", fontWeight = FontWeight.Bold, color = VideoKeeperPalette.accent)
                     Text(
-                        "匯出前仍會檢查來源解碼器、硬體 H.264/AAC 編碼器與輸出音訊完整性。",
+                        "匯出前檢查硬體 H.264 影片路徑；音訊優先直接複製，必要時才以 AAC 軟體編碼，並驗證輸出完整性。",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -469,11 +469,11 @@ private fun SettingsScreen(vm: VideoKeeperViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            HeroCard("設定與裝置能力", "輸出前仍會針對每支來源檢查硬體路徑；沒有支援時會失敗並說明原因，不會偷偷使用軟體轉碼。") {}
+            HeroCard("設定與裝置能力", "輸出前仍會針對每支來源檢查硬體影片路徑；沒有硬體影片路徑時會失敗並說明原因。音訊優先複製，必要時才使用 AAC 軟體編碼。") {}
         }
         item {
             SettingsCard(title = "輸出品質") {
-                Text("預設 H.264 MP4 + AAC，HEVC 不會因為檔案較小就強行啟用。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("預設 H.264 MP4；AAC 音訊優先直接複製，非相容音訊才轉 AAC。HEVC 不會因為檔案較小就強行啟用。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
                     ExportQuality.values().forEach { option ->
                         FilterChip(

@@ -18,13 +18,13 @@
 
 結果：
 
-- `:app:testDebugUnitTest` 成功：14 tests，0 failed、0 error、0 skipped。
+- `:app:testDebugUnitTest` 成功：15 tests，0 failed、0 error、0 skipped。
 - 純 Kotlin 覆蓋固定/不對稱黑邊、片頭全黑、直式來源、旋轉 metadata、動態不穩定、偶數輸出尺寸、時間偏移指紋與 Room codec。
 - `:app:compileDebugAndroidTestKotlin` 成功；instrumentation test 會檢查 APK 沒有 INTERNET 權限且宣告 mediaProcessing service。
 - `:app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - `:app:lintDebug` 成功；只保留 Android SDK/依賴版本提醒與 Compose/Media3 API 相容性警告，沒有 lint error。
-- APK SHA-256（本次本機 Debug 產物）：`f7da4e154a9534eaec43fb833775af082874f531e94a06e00cbdfa7a7e8e1685`。
-- APK 大小：67,657,679 bytes（約 64.5 MiB）。
+- APK SHA-256（本次本機 Debug 產物）：`a2944e158440be5a69af0410f3334de35448ffb9546b27c82fae610ff526a12c`。
+- APK 大小：67,661,867 bytes（約 64.5 MiB）。
 - `apksigner verify --verbose --print-certs` 成功：APK Signature Scheme v2；簽章者為 Android Debug，沒有使用正式 Release 私鑰。
 - CI workflow 會對 Debug APK 再執行 `apksigner verify`、產生 `SHA256SUMS.txt`，並上傳 `VideoKeeper-debug-APK` artifact。
 
@@ -37,7 +37,7 @@
 - HDR/SDR、特殊 MKV/AV1/HEVC、旋轉 metadata 的實際輸出與聲畫播放。
 - instrumentation test 的 connected execution；目前只完成測試 APK 編譯。
 
-上述限制已在 App「設定」和 Release notes 說明。沒有可用硬體 codec 時，程式會在開始 Transformer 前失敗並保留來源，不會偷偷切換 CPU 軟體轉碼。
+上述限制已在 App「設定」和 Release notes 說明。沒有可用硬體影片解碼器或 H.264 編碼器時，程式會在開始 Transformer 前失敗並保留來源；AAC 音訊則優先直接複製，非相容音訊才允許 Media3 的 AAC 軟體編碼。
 
 ## 正式簽章與 Release
 

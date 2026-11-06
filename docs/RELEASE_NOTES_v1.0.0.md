@@ -12,7 +12,7 @@
 - Jetpack Compose Material 3 繁體中文介面與既有 VideoKeeper 品牌圖示。
 - SAF 多影片／資料夾與子資料夾匯入，持久化 URI 授權與影片 metadata/縮圖。
 - 多時間點穩健黑邊偵測、旋轉／全黑／低亮度／動態背景安全閘門、人工裁切滑桿與雙預覽。
-- AndroidX Media3 Transformer + OpenGL Crop；輸出前檢查硬體解碼器、H.264/AAC 編碼器，拒絕軟體 fallback。
+- AndroidX Media3 Transformer + OpenGL Crop；輸出前檢查硬體解碼器與 H.264 影片編碼器。AAC 音訊優先直接複製，非相容音訊才使用 AAC 軟體編碼，並驗證音訊軌完整性。
 - Android 15 `mediaProcessing` Foreground Service 循序佇列、取消、進度、實際耗時/速度與輸出軌完整性檢查。
 - Room 本機內容指紋快取、pHash/dHash/亮度色彩候選、時間偏移與 SSIM 等效畫面驗證、分組與 CSV 報告。
 - 原始影片不會被覆蓋、刪除或上傳；失敗輸出會清除。
