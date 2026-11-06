@@ -1,6 +1,7 @@
 package com.videokeeper.mobile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -28,5 +29,22 @@ class MediaModelUnitTest {
         assertTrue(HardwareCodecInspector.canCopyAudio(HardwareCodecInspector.AAC))
         assertTrue(!HardwareCodecInspector.canCopyAudio("audio/opus"))
         assertTrue(!HardwareCodecInspector.canCopyAudio(null))
+    }
+
+    @Test fun encoderCropAlignsOddMedia3CropResultToEvenDimensions() {
+        val crop = CropMath.encoderCrop(1280, 720, .342f, .373f)
+        assertNotNull(crop)
+        assertEquals(364, crop?.outputWidth)
+        assertEquals(720, crop?.outputHeight)
+        assertTrue(crop!!.outputWidth % 2 == 0)
+        assertTrue(crop.outputHeight % 2 == 0)
+    }
+
+    @Test fun encoderCropAlsoFixesOddSourceHeightWithoutChangingHorizontalIntent() {
+        val crop = CropMath.encoderCrop(641, 719, 0f, 0f)
+        assertNotNull(crop)
+        assertEquals(640, crop?.outputWidth)
+        assertEquals(718, crop?.outputHeight)
+        assertTrue(crop!!.bottom > 0f)
     }
 }

@@ -13,6 +13,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
@@ -27,6 +30,8 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
     private val analyzer = Analyzer(application)
     private val stopping = AtomicBoolean(false)
     private var operation: Job? = null
+    private var operationToken = 0L
+    private var operationKind: LongOperationKind? = null
 
     val videos = androidx.compose.runtime.mutableStateListOf<VideoEntry>()
     val duplicates = androidx.compose.runtime.mutableStateListOf<DuplicatePair>()
@@ -81,14 +86,9 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
 
     fun importFiles(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        operation?.cancel()
-        stopping.set(false)
         selectTab(AppTab.IMPORT)
-        operation = viewModelScope.launch {
-            busy.value = true
-            progress.intValue = 0
-            status.value = "正在讀取 ${uris.size} 支影片…"
-            val distinct = uris.distinctBy { it.toString() }
+        val distinct = uris.distinctBy { it.toString() }
+        startOperation(LongOperationKind.IMPORT, "正在讀取 ${distinct.size} 支影片…") {
             distinct.forEachIndexed { index, uri ->
                 if (stopping.get()) return@forEachIndexed
                 persistReadGrant(uri)
@@ -98,10 +98,12 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
                 progress.intValue = ((index + 1) * 100 / distinct.size).coerceIn(0, 100)
                 status.value = "已加入 ${index + 1}/${distinct.size} 支：${entry.name}"
             }
-            busy.value = false
-            status.value = "已加入 ${videos.size} 支影片；可開始分析黑邊或內容。"
+            status.value = if (stopping.get()) {
+                "讀取已取消，保留目前的 ${videos.size} 支影片"
+            } else {
+                "已加入 ${videos.size} 支影片；可開始分析黑邊或內容。"
+            }
             progress.intValue = 100
-            operation = null
         }
     }
 
@@ -115,10 +117,7 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         destinationFolderName.value = displayName ?: "影片資料夾"
         saveFolders()
         selectTab(AppTab.IMPORT)
-        operation = viewModelScope.launch {
-            busy.value = true
-            progress.intValue = 0
-            status.value = "正在掃描資料夾與子資料夾…"
+        startOperation(LongOperationKind.IMPORT, "正在掃描資料夾與子資料夾…") {
             videos.clear()
             duplicates.clear()
             val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(app, uri)
@@ -135,11 +134,9 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
                 progress.intValue = if (files.isEmpty()) 100 else (index + 1) * 100 / files.size
                 status.value = "掃描 ${index + 1}/${files.size}：${entry.name}"
             }
-            busy.value = false
             progress.intValue = 100
             status.value = if (stopping.get()) "掃描已取消，保留已找到的 ${videos.size} 支影片"
             else "掃描完成：找到 ${videos.size} 支影片（包含子資料夾）"
-            operation = null
         }
     }
 
@@ -156,7 +153,7 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
             status.value = "尚未加入影片"
             return
         }
-        startOperation("準備分析黑邊…") {
+        startOperation(LongOperationKind.CROP, "準備分析黑邊…") {
             var automatic = 0
             var review = 0
             var failed = 0
@@ -212,7 +209,7 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
             status.value = "至少加入兩支影片才能比對"
             return
         }
-        startOperation("準備建立內容指紋…") {
+        startOperation(LongOperationKind.DUPLICATES, "準備建立內容指紋…") {
             val snapshot = videos.toList()
             val candidates = mutableListOf<Triple<VideoEntry, VideoEntry, SimilarityResult>>()
             snapshot.forEachIndexed { index, original ->
@@ -412,11 +409,25 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun cancelAnalysis() {
+        val kind = operationKind
+        if (kind != null) {
+            operationToken++
+            stopping.set(true)
+            operation?.cancel()
+            operation = null
+            QueueStore.stopProcessingSession(app)
+            NotificationHelper.showResult(app, kind, "已取消目前工作，已保留已完成結果。", success = false)
+            operationKind = null
+        }
         stopping.set(true)
         operation?.cancel()
         operation = null
         busy.value = false
-        status.value = "已取消分析，保留目前已完成的結果"
+        status.value = if (kind == LongOperationKind.IMPORT) {
+            "已取消匯入，保留目前已完成的結果"
+        } else {
+            "已取消分析，保留目前已完成的結果"
+        }
     }
 
     fun reloadQueue() {
@@ -431,18 +442,59 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         return "H.264 硬體編碼器 ${encoders.size} 個、解碼器 ${decoders.size} 個；AAC 硬體編碼器 ${audio.size} 個（音訊優先複製，必要時可軟編碼）"
     }
 
-    private fun startOperation(initial: String, block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {
+    private fun startOperation(
+        kind: LongOperationKind,
+        initial: String,
+        block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit
+    ) {
         operation?.cancel()
+        operationToken++
+        val token = operationToken
         stopping.set(false)
+        operationKind = kind
+        val sessionStarted = !QueueStore.hasActiveQueue(app) &&
+            QueueStore.startProcessingSession(app, kind.label) == null
         operation = viewModelScope.launch {
             busy.value = true
             progress.intValue = 0
             status.value = initial
+            NotificationHelper.showProgress(app, kind, initial, 0)
+            val notificationTicker = launch {
+                while (isActive) {
+                    delay(700L)
+                    if (token != operationToken) break
+                    NotificationHelper.showProgress(app, kind, status.value, progress.intValue)
+                }
+            }
             try {
                 block()
+                if (token == operationToken) {
+                    NotificationHelper.showResult(
+                        app,
+                        kind,
+                        status.value,
+                        success = !stopping.get()
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                if (token == operationToken) {
+                    status.value = if (stopping.get()) "已取消目前工作，已保留已完成結果" else "工作被中斷"
+                    NotificationHelper.showResult(app, kind, status.value, success = false)
+                }
+                throw cancelled
+            } catch (error: Throwable) {
+                if (token == operationToken) {
+                    status.value = "${kind.label}失敗：${error.message ?: "未知錯誤"}"
+                    NotificationHelper.showResult(app, kind, status.value, success = false)
+                }
             } finally {
-                busy.value = false
-                operation = null
+                notificationTicker.cancel()
+                if (token == operationToken) {
+                    if (sessionStarted) QueueStore.stopProcessingSession(app)
+                    busy.value = false
+                    operation = null
+                    operationKind = null
+                }
             }
         }
     }

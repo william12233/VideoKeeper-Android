@@ -20,7 +20,13 @@ object HardwareCodecInspector {
     const val HEVC = "video/hevc"
     const val AAC = "audio/mp4a-latm"
 
-    fun inspect(context: Context, uri: Uri): HardwareCapability {
+    fun inspect(
+        context: Context,
+        uri: Uri,
+        outputWidth: Int = 0,
+        outputHeight: Int = 0,
+        frameRate: Float = 0f
+    ): HardwareCapability {
         val tracks = readTracks(context, uri)
         val sourceMime = tracks.firstOrNull { it.startsWith("video/") }
         if (sourceMime == null) {
@@ -33,11 +39,17 @@ object HardwareCodecInspector {
                 "裝置沒有 ${sourceMime} 的硬體解碼器，已拒絕慢速軟體路徑"
             )
         }
-        val encoder = codecInfos(H264, true).firstOrNull()
+        val allEncoders = codecInfos(H264, true)
+        val encoder = hardwareEncoderInfos(H264, outputWidth, outputHeight, frameRate).firstOrNull()
         if (encoder == null) {
             return HardwareCapability(
                 sourceMime, decoder.name, null, null, false,
-                "裝置沒有 H.264 硬體編碼器，無法使用高速輸出"
+                when {
+                    allEncoders.isEmpty() -> "裝置沒有 H.264 硬體編碼器，無法使用高速輸出"
+                    outputWidth > 0 && outputHeight > 0 ->
+                        "硬體 H.264 編碼器不接受 ${outputWidth}×${outputHeight}（${frameRate.coerceAtLeast(0f)} fps）"
+                    else -> "裝置的 H.264 硬體編碼器無法使用，無法使用高速輸出"
+                }
             )
         }
         val audioMime = tracks.firstOrNull { it.startsWith("audio/") }
@@ -64,6 +76,26 @@ object HardwareCodecInspector {
     fun hardwareEncoderNames(mime: String): List<String> = codecInfos(mime, true).map { it.name }
 
     fun hardwareEncoderInfos(mime: String): List<MediaCodecInfo> = codecInfos(mime, true)
+
+    fun hardwareEncoderInfos(
+        mime: String,
+        width: Int,
+        height: Int,
+        frameRate: Float
+    ): List<MediaCodecInfo> {
+        if (width <= 0 || height <= 0 || !mime.startsWith("video/")) {
+            return hardwareEncoderInfos(mime)
+        }
+        return codecInfos(mime, true).filter { info ->
+            runCatching {
+                val capabilities = info.getCapabilitiesForType(mime).videoCapabilities
+                    ?: return@runCatching true
+                val rate = frameRate.takeIf { it > 0f }?.coerceAtMost(240f) ?: 30f
+                capabilities.areSizeAndRateSupported(width, height, rate.toDouble()) ||
+                    capabilities.areSizeAndRateSupported(height, width, rate.toDouble())
+            }.getOrDefault(false)
+        }
+    }
 
     fun hardwareDecoderNames(mime: String): List<String> = decoderInfos(mime).map { it.name }
 

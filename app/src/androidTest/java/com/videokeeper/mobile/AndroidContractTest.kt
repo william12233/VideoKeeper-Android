@@ -1,5 +1,6 @@
 package com.videokeeper.mobile
 
+import android.app.NotificationManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -28,6 +29,16 @@ class AndroidContractTest {
             assertTrue(service.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING != 0)
         } else if (Build.VERSION.SDK_INT >= 29) {
             assertTrue(service.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0)
+        }
+    }
+
+    @Test fun longOperationsHaveProgressAndResultNotificationChannels() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        NotificationHelper.createChannels(context)
+        if (Build.VERSION.SDK_INT >= 26) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            assertNotNull(manager.getNotificationChannel(NotificationHelper.PROCESSING_CHANNEL_ID))
+            assertNotNull(manager.getNotificationChannel(NotificationHelper.RESULT_CHANNEL_ID))
         }
     }
 }

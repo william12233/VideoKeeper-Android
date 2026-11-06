@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** A frame-level observation produced by the Android bitmap sampler. */
 data class BorderObservation(
@@ -110,6 +111,15 @@ object BlackBarDetector {
 }
 
 object CropMath {
+    data class EncoderCrop(
+        val left: Float,
+        val right: Float,
+        val top: Float,
+        val bottom: Float,
+        val outputWidth: Int,
+        val outputHeight: Int
+    )
+
     fun outputDimension(source: Int, leading: Float, trailing: Float): Int {
         if (source <= 0) return 0
         val value = (source * (1f - leading - trailing)).toInt().coerceAtLeast(2)
@@ -117,4 +127,54 @@ object CropMath {
     }
 
     fun normalizedCrop(value: Float): Float = value.coerceIn(0f, 0.44f)
+
+    /**
+     * Converts the user crop into pixel-aligned bounds for Media3 Crop.
+     *
+     * Media3 calculates its output size with Math.round(input * cropFraction).
+     * Passing arbitrary detector floats can therefore produce an odd encoder
+     * width (for example 365 px), which is rejected by several H.264 hardware
+     * encoders. We crop at least the requested number of pixels and use an even
+     * output width/height. The possible extra crop is at most one pixel per
+     * affected edge and is safer than exposing a detected black bar or asking
+     * the hardware encoder for an unsupported frame size.
+     */
+    fun encoderCrop(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        leading: Float,
+        trailing: Float
+    ): EncoderCrop? {
+        if (sourceWidth < 2 || sourceHeight < 2) return null
+        val safeLeading = normalizedCrop(leading)
+        val safeTrailing = normalizedCrop(trailing)
+        if (safeLeading + safeTrailing >= 0.88f) return null
+
+        var leftPixels = (sourceWidth * safeLeading).roundToInt().coerceIn(0, sourceWidth - 2)
+        var rightPixels = (sourceWidth * safeTrailing).roundToInt().coerceIn(0, sourceWidth - leftPixels - 2)
+        var width = sourceWidth - leftPixels - rightPixels
+        if (width % 2 != 0) {
+            if (rightPixels < sourceWidth - leftPixels - 2) rightPixels++ else leftPixels++
+            width = sourceWidth - leftPixels - rightPixels
+        }
+
+        var bottomPixels = 0
+        var topPixels = 0
+        var height = sourceHeight
+        if (height % 2 != 0) {
+            // Keep the crop horizontal in the UI; remove one bottom row only
+            // when the source itself cannot produce an even H.264 frame.
+            bottomPixels = 1
+            height--
+        }
+        if (width < 2 || height < 2) return null
+        return EncoderCrop(
+            left = leftPixels.toFloat() / sourceWidth,
+            right = rightPixels.toFloat() / sourceWidth,
+            top = topPixels.toFloat() / sourceHeight,
+            bottom = bottomPixels.toFloat() / sourceHeight,
+            outputWidth = width,
+            outputHeight = height
+        )
+    }
 }

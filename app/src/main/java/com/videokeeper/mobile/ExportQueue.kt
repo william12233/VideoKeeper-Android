@@ -3,7 +3,6 @@
 package com.videokeeper.mobile
 
 import android.content.Context
-import android.media.MediaCodecInfo
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -49,6 +48,18 @@ class ExportQueue(
     private var current: QueueItem? = null
     private var startedAt = 0L
 
+    private data class Preparation(
+        val info: VideoInfo,
+        val crop: CropMath.EncoderCrop,
+        val capability: HardwareCapability,
+        val bitrate: Int
+    )
+
+    companion object {
+        private const val MAX_CODEC_ATTEMPTS = 2
+        private const val RETRY_DELAY_MS = 350L
+    }
+
     fun start() {
         check(Looper.myLooper() == Looper.getMainLooper())
         next()
@@ -79,58 +90,98 @@ class ExportQueue(
         startedAt = SystemClock.elapsedRealtime()
         onUpdate(item.copy(state = QueueState.RUNNING, progress = 0, error = null, updatedAt = now()))
         io.execute {
-            val info = runCatching { analyzer.readInfo(android.net.Uri.parse(item.uriString)) }.getOrNull()
-            val capability = runCatching {
-                HardwareCodecInspector.inspect(
-                    context,
-                    android.net.Uri.parse(item.uriString)
+            val preparation = runCatching {
+                val info = analyzer.readInfo(android.net.Uri.parse(item.uriString))
+                val crop = CropMath.encoderCrop(
+                    sourceWidth = info.width,
+                    sourceHeight = info.height,
+                    leading = item.left,
+                    trailing = item.right
+                ) ?: error("來源影片尺寸或裁切範圍無效，未建立輸出檔")
+                val bitrate = quality.bitrate(info, info.width, info.height)
+                val capability = HardwareCodecInspector.inspect(
+                    context = context,
+                    uri = android.net.Uri.parse(item.uriString),
+                    outputWidth = crop.outputWidth,
+                    outputHeight = crop.outputHeight,
+                    frameRate = info.frameRate
                 )
-            }.getOrElse {
-                HardwareCapability(null, null, null, null, false, "硬體能力檢查失敗：${it.message}")
+                Preparation(info, crop, capability, bitrate)
             }
             handler.post {
-                if (cancelled) return@post
-                if (!capability.supported) {
-                    failCurrent(capability.reason)
-                } else {
-                    startTransformer(item, info, capability)
-                }
+                if (cancelled || finished) return@post
+                preparation.fold(
+                    onSuccess = { ready ->
+                        if (!ready.capability.supported) failCurrent(ready.capability.reason)
+                        else startTransformer(item, ready, attempt = 0)
+                    },
+                    onFailure = { error ->
+                        failCurrent(error.message ?: "無法準備硬體轉檔")
+                    }
+                )
             }
         }
     }
 
-    private fun startTransformer(item: QueueItem, info: VideoInfo?, capability: HardwareCapability) {
+    private fun startTransformer(item: QueueItem, preparation: Preparation, attempt: Int) {
+        if (cancelled || finished) return
+        val info = preparation.info
+        val crop = preparation.crop
         val output = File(context.cacheDir, "videokeeper-${UUID.randomUUID()}.mp4")
         temporaryFile = output
-        val cropLeft = item.left.coerceIn(0f, 0.44f)
-        val cropRight = item.right.coerceIn(0f, 0.44f)
-        if (cropLeft + cropRight >= 0.88f) {
-            failCurrent("裁切範圍無效，保留原始檔未輸出")
-            return
-        }
         val edited = EditedMediaItem.Builder(
             MediaItem.fromUri(android.net.Uri.parse(item.uriString))
         ).setEffects(
             Effects(
                 emptyList(),
-                listOf(Crop(cropLeft * 2f - 1f, 1f - cropRight * 2f, -1f, 1f))
+                listOf(
+                    Crop(
+                        crop.left * 2f - 1f,
+                        1f - crop.right * 2f,
+                        -1f + crop.bottom * 2f,
+                        1f - crop.top * 2f
+                    )
+                )
             )
         ).build()
-        val bitrate = quality.bitrate(info, item.sourceWidth, item.sourceHeight)
         val decoderFactory = DefaultDecoderFactory.Builder(context)
             .setEnableDecoderFallback(false)
             .setMediaCodecSelector(HardwareCodecInspector.hardwareOnlyDecoderSelector())
             .build()
         val encoderSelector = EncoderSelector { mime ->
-            ImmutableList.copyOf(HardwareCodecInspector.hardwareEncoderInfos(mime))
+            if (mime.equals(MimeTypes.VIDEO_H264, ignoreCase = true)) {
+                ImmutableList.copyOf(
+                    HardwareCodecInspector.hardwareEncoderInfos(
+                        mime = mime,
+                        width = crop.outputWidth,
+                        height = crop.outputHeight,
+                        frameRate = info.frameRate
+                    )
+                )
+            } else {
+                // The video selector remains hardware-only. Audio uses Media3's
+                // normal selector so software AAC is available when necessary.
+                EncoderSelector.DEFAULT.selectEncoderInfos(mime)
+            }
         }
+        val encoderSettings = VideoEncoderSettings.Builder()
+            .setBitrate(preparation.bitrate)
+            // Qualcomm devices can reject Media3's default max-throughput
+            // operating-rate hint even though the same hardware encoder works.
+            // Omitting only this optional hint keeps the hardware path intact.
+            .setEncoderPerformanceParameters(
+                VideoEncoderSettings.RATE_UNSET,
+                VideoEncoderSettings.RATE_UNSET
+            )
+            .build()
         val encoderFactory = DefaultEncoderFactory.Builder(context)
             .setVideoEncoderSelector(encoderSelector)
-            .setEnableFallback(false)
+            // Fallback is safe here: the selector never returns a software video
+            // encoder. It lets Media3 clamp bitrate to the hardware range and
+            // choose another hardware encoder when one is available.
+            .setEnableFallback(true)
             .setEnableFormatFallback(false)
-            .setRequestedVideoEncoderSettings(
-                VideoEncoderSettings.Builder().setBitrate(bitrate).build()
-            )
+            .setRequestedVideoEncoderSettings(encoderSettings)
             .build()
         try {
             val transformerBuilder = Transformer.Builder(context)
@@ -142,15 +193,14 @@ class ExportQueue(
             // compatible AAC track. For other audio codecs, request AAC and
             // allow Media3's normal audio encoder selection, including software
             // AAC when the device has no hardware AAC encoder.
-            if (info?.hasAudio == true && !HardwareCodecInspector.canCopyAudio(info.audioMime)) {
+            if (info.hasAudio && !HardwareCodecInspector.canCopyAudio(info.audioMime)) {
                 transformerBuilder.setAudioMimeType(MimeTypes.AUDIO_AAC)
             }
             transformer = transformerBuilder.addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         transformer = null
-                        if (cancelled) {
+                        if (cancelled || finished) {
                             output.delete()
-                            finish()
                             return
                         }
                         if (!HardwareCodecInspector.isHardwareCodecName(exportResult.videoEncoderName)) {
@@ -167,8 +217,13 @@ class ExportQueue(
                         exportException: ExportException
                     ) {
                         transformer = null
-                        output.delete()
-                        failCurrent(readableError(exportException))
+                        handleTransformerFailure(
+                            item = item,
+                            preparation = preparation,
+                            attempt = attempt,
+                            output = output,
+                            reason = readableError(exportException)
+                        )
                     }
                 })
                 .build()
@@ -176,8 +231,41 @@ class ExportQueue(
             postProgress()
         } catch (error: Exception) {
             transformer = null
-            output.delete()
-            failCurrent("無法啟動硬體轉檔：${error.message ?: "未知錯誤"}")
+            handleTransformerFailure(
+                item = item,
+                preparation = preparation,
+                attempt = attempt,
+                output = output,
+                reason = "無法啟動硬體轉檔：${compactMessage(error.message)}"
+            )
+        }
+    }
+
+    private fun handleTransformerFailure(
+        item: QueueItem,
+        preparation: Preparation,
+        attempt: Int,
+        output: File,
+        reason: String
+    ) {
+        output.delete()
+        if (finished || cancelled || current?.id != item.id) return
+        if (attempt + 1 < MAX_CODEC_ATTEMPTS) {
+            onUpdate(
+                item.copy(
+                    state = QueueState.RUNNING,
+                    progress = 0,
+                    error = "硬體編碼器暫時拒絕目前設定，正在重試…",
+                    updatedAt = now()
+                )
+            )
+            handler.postDelayed({
+                if (!finished && !cancelled && current?.id == item.id) {
+                    startTransformer(item, preparation, attempt + 1)
+                }
+            }, RETRY_DELAY_MS)
+        } else {
+            failCurrent(reason)
         }
     }
 
@@ -233,6 +321,10 @@ class ExportQueue(
                     updatedAt = now()
                 )
                 handler.post {
+                    if (cancelled || finished) {
+                        temporary.delete()
+                        return@post
+                    }
                     temporary.delete()
                     temporaryFile = null
                     onUpdate(done)
@@ -255,6 +347,10 @@ class ExportQueue(
                 updatedAt = now()
             )
             handler.post {
+                if (cancelled || finished) {
+                    temporary.delete()
+                    return@post
+                }
                 temporaryFile = null
                 onUpdate(failed)
                 index++
@@ -265,6 +361,7 @@ class ExportQueue(
     }
 
     private fun failCurrent(reason: String) {
+        if (finished || cancelled) return
         val item = current ?: return
         temporaryFile?.delete()
         temporaryFile = null
@@ -283,8 +380,20 @@ class ExportQueue(
         handler.postDelayed({ postProgress() }, 600L)
     }
 
-    private fun readableError(error: ExportException): String =
-        "硬體轉檔失敗：${error.message ?: error.cause?.message ?: "裝置不支援此影片格式"}"
+    private fun readableError(error: ExportException): String {
+        val category = when (error.errorCode) {
+            ExportException.ERROR_CODE_ENCODER_INIT_FAILED -> "硬體編碼器初始化失敗"
+            ExportException.ERROR_CODE_ENCODING_FAILED -> "硬體影片編碼失敗"
+            ExportException.ERROR_CODE_ENCODING_FORMAT_UNSUPPORTED -> "硬體編碼器不支援此輸出格式"
+            ExportException.ERROR_CODE_VIDEO_FRAME_PROCESSING_FAILED -> "硬體畫面處理失敗"
+            else -> "硬體轉檔失敗"
+        }
+        val codec = error.codecInfo?.name?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
+        return "$category$codec；已重試仍失敗，未建立正式輸出檔"
+    }
+
+    private fun compactMessage(message: String?): String =
+        message?.lineSequence()?.firstOrNull()?.take(220) ?: "未知錯誤"
 
     private fun finish() {
         if (finished) return

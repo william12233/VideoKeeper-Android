@@ -11,6 +11,9 @@ object QueueStore {
     const val ACTION_QUEUE_UPDATED = "com.videokeeper.mobile.QUEUE_UPDATED"
     const val ACTION_START = "com.videokeeper.mobile.START_QUEUE"
     const val ACTION_CANCEL = "com.videokeeper.mobile.CANCEL_QUEUE"
+    const val ACTION_START_SESSION = "com.videokeeper.mobile.START_PROCESSING_SESSION"
+    const val ACTION_STOP_SESSION = "com.videokeeper.mobile.STOP_PROCESSING_SESSION"
+    const val EXTRA_SESSION_TITLE = "session_title"
     private const val PREFS = "export_queue_v2"
     private const val KEY = "items"
     private val lock = Any()
@@ -55,6 +58,23 @@ object QueueStore {
     fun cancel(context: Context): Throwable? = runCatching {
         val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_CANCEL)
         ContextCompat.startForegroundService(context, intent)
+    }.exceptionOrNull()
+
+    fun hasActiveQueue(context: Context): Boolean = load(context).any {
+        it.state == QueueState.QUEUED || it.state == QueueState.RUNNING
+    }
+
+    /** Keeps user-started analysis/duplicate work in a mediaProcessing FGS while the UI is away. */
+    fun startProcessingSession(context: Context, title: String): Throwable? = runCatching {
+        val intent = Intent(context, MediaProcessingService::class.java)
+            .setAction(ACTION_START_SESSION)
+            .putExtra(EXTRA_SESSION_TITLE, title)
+        ContextCompat.startForegroundService(context, intent)
+    }.exceptionOrNull()
+
+    fun stopProcessingSession(context: Context): Throwable? = runCatching {
+        val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_STOP_SESSION)
+        context.startService(intent)
     }.exceptionOrNull()
 
     private fun toJson(item: QueueItem) = JSONObject().apply {

@@ -112,7 +112,7 @@ import kotlin.math.max
 fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val context = LocalContext.current
     val activeTab by vm.activeTab
-    var pendingQueueStart by remember { mutableStateOf(false) }
+    var pendingNotificationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val multipleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { vm.importFiles(it) }
@@ -138,31 +138,30 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
-        // Do not start an FGS while the runtime permission dialog is covering the
-        // activity. Some Android 13+ devices reject that as a background start.
-        if (pendingQueueStart) {
-            pendingQueueStart = false
-            vm.enqueueSelected()
-        }
+        // Start the user-requested operation only after the permission dialog is
+        // gone. Android 13+ can reject an FGS start while that dialog is visible.
+        val action = pendingNotificationAction
+        pendingNotificationAction = null
+        action?.invoke()
     }
 
-    fun startExport() {
+    fun runWithNotificationPermission(action: () -> Unit) {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            pendingQueueStart = true
+            pendingNotificationAction = action
             runCatching {
                 notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }.onFailure {
-                // If the permission activity cannot be opened, the export itself
-                // is still allowed; the service will report its own error.
-                pendingQueueStart = false
-                vm.enqueueSelected()
+                pendingNotificationAction = null
+                action()
             }
         } else {
-            vm.enqueueSelected()
+            action()
         }
     }
+
+    fun startExport() = runWithNotificationPermission { vm.enqueueSelected() }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -242,8 +241,16 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (activeTab) {
                 AppTab.IMPORT -> ImportScreen(vm, multipleLauncher, folderLauncher, destinationLauncher)
-                AppTab.CROP -> CropScreen(vm) { startExport() }
-                AppTab.DUPLICATES -> DuplicateScreen(vm, csvLauncher)
+                AppTab.CROP -> CropScreen(
+                    vm = vm,
+                    startExport = { startExport() },
+                    startAnalysis = { runWithNotificationPermission(vm::analyzeCrop) }
+                )
+                AppTab.DUPLICATES -> DuplicateScreen(
+                    vm = vm,
+                    csvLauncher = csvLauncher,
+                    startAnalysis = { runWithNotificationPermission(vm::analyzeDuplicates) }
+                )
                 AppTab.QUEUE -> QueueScreen(vm)
                 AppTab.SETTINGS -> SettingsScreen(vm)
             }
@@ -330,7 +337,11 @@ private fun ImportScreen(
 }
 
 @Composable
-private fun CropScreen(vm: VideoKeeperViewModel, startExport: () -> Unit) {
+private fun CropScreen(
+    vm: VideoKeeperViewModel,
+    startExport: () -> Unit,
+    startAnalysis: () -> Unit
+) {
     var editorEntry by remember { mutableStateOf<VideoEntry?>(null) }
     val selectedCount = vm.videos.count { it.crop.selected && it.crop.cropped }
     LazyColumn(
@@ -343,9 +354,9 @@ private fun CropScreen(vm: VideoKeeperViewModel, startExport: () -> Unit) {
                 eyebrow = "TOOL 01 · OPENGL CROP",
                 title = "智慧黑邊裁切",
                 body = "抽樣多個時間點，以穩健統計確認左右固定黑邊；不確定的影片不會自動勾選。",
-                actionText = "分析全部影片",
-                enabled = !vm.busy.value && vm.videos.isNotEmpty(),
-                onAction = vm::analyzeCrop
+                actionText = if (vm.busy.value) "取消目前分析" else "分析全部影片",
+                enabled = vm.busy.value || vm.videos.isNotEmpty(),
+                onAction = if (vm.busy.value) vm::cancelAnalysis else startAnalysis
             )
         }
         item {
@@ -396,7 +407,8 @@ private fun CropScreen(vm: VideoKeeperViewModel, startExport: () -> Unit) {
 @Composable
 private fun DuplicateScreen(
     vm: VideoKeeperViewModel,
-    csvLauncher: androidx.activity.result.ActivityResultLauncher<String>
+    csvLauncher: androidx.activity.result.ActivityResultLauncher<String>,
+    startAnalysis: () -> Unit
 ) {
     val groups = remember(vm.duplicates.toList()) { buildDuplicateGroups(vm.duplicates.toList()) }
     LazyColumn(
@@ -409,9 +421,9 @@ private fun DuplicateScreen(
                 eyebrow = "TOOL 02 · LOCAL FINGERPRINT",
                 title = "依內容尋找相似影片",
                 body = "先以多畫格指紋縮減候選，再以時間偏移與 SSIM 等效畫面比對驗證；相似度不是數學機率。",
-                actionText = "掃描全部影片",
-                enabled = !vm.busy.value && vm.videos.size >= 2,
-                onAction = vm::analyzeDuplicates
+                actionText = if (vm.busy.value) "取消目前分析" else "掃描全部影片",
+                enabled = vm.busy.value || vm.videos.size >= 2,
+                onAction = if (vm.busy.value) vm::cancelAnalysis else startAnalysis
             )
         }
         item {
@@ -502,7 +514,7 @@ private fun SettingsScreen(vm: VideoKeeperViewModel) {
         }
         item {
             SettingsCard(title = "隱私與權限") {
-                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 原始檔唯讀，輸出由你指定資料夾", fontSize = 12.sp, color = VideoKeeperPalette.safe)
+                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 原始檔唯讀，輸出由你指定資料夾\n✓ 背景工作進度與結果通知（需允許通知權限）", fontSize = 12.sp, color = VideoKeeperPalette.safe)
             }
         }
     }
