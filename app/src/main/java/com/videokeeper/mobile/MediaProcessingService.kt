@@ -32,8 +32,21 @@ class MediaProcessingService : Service() {
             if (queue == null) stopService()
             return START_NOT_STICKY
         }
-        startForegroundCompat("準備處理影片工作…", 0)
-        if (queue == null) startQueue()
+        try {
+            startForegroundCompat("準備處理影片工作…", 0)
+            if (queue == null) startQueue()
+        } catch (error: Exception) {
+            // A device may reject the declared FGS type or notification even
+            // after the Activity accepted the start request. Convert that into
+            // durable queue failures instead of crashing the application process.
+            val reason = "Android 拒絕啟動本機處理服務：${error.message ?: "請檢查通知與背景處理權限"}"
+            QueueStore.load(this)
+                .filter { it.state == QueueState.QUEUED || it.state == QueueState.RUNNING }
+                .forEach { item ->
+                    QueueStore.update(this, item.copy(state = QueueState.FAILED, progress = 0, error = reason))
+                }
+            runCatching { stopService() }
+        }
         return START_NOT_STICKY
     }
 
@@ -69,15 +82,30 @@ class MediaProcessingService : Service() {
 
     private fun startForegroundCompat(message: String, progress: Int) {
         val notification = buildNotification(message, progress)
-        if (Build.VERSION.SDK_INT >= 35) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        when {
+            Build.VERSION.SDK_INT >= 35 -> {
+                // Android 15's long-running video path. The matching manifest
+                // permission and service type are both declared above.
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+                )
+            }
+            Build.VERSION.SDK_INT >= 29 -> {
+                // mediaProcessing does not exist before Android 15. dataSync is
+                // the valid compatibility type for the same user-initiated job.
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            }
+            else -> {
+                startForeground(NOTIFICATION_ID, notification)
+            }
         }
     }
 

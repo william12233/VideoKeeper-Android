@@ -26,6 +26,8 @@ class AndroidContractTest {
         assertNotNull(service)
         if (Build.VERSION.SDK_INT >= 35) {
             assertTrue(service.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING != 0)
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            assertTrue(service.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC != 0)
         }
     }
 }

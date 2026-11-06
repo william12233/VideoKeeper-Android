@@ -338,15 +338,30 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         }
         queue.addAll(newItems)
         QueueStore.save(app, queue.toList())
+        val startError = QueueStore.start(app)
+        if (startError != null) {
+            val reason = "無法啟動本機工作佇列：${startError.message ?: "Android 未允許背景處理"}"
+            newItems.forEach { item ->
+                val index = queue.indexOfFirst { it.id == item.id }
+                if (index >= 0) queue[index] = item.copy(state = QueueState.FAILED, error = reason)
+            }
+            QueueStore.save(app, queue.toList())
+            selectTab(AppTab.QUEUE)
+            status.value = reason
+            return false
+        }
         selectTab(AppTab.QUEUE)
         status.value = "已加入 ${newItems.size} 支影片；正在啟動本機工作佇列"
-        QueueStore.start(app)
         return true
     }
 
     fun cancelQueue() {
-        QueueStore.cancel(app)
-        status.value = "已要求取消目前轉檔；不完整輸出會被清除"
+        val error = QueueStore.cancel(app)
+        status.value = if (error == null) {
+            "已要求取消目前轉檔；不完整輸出會被清除"
+        } else {
+            "無法取消本機工作：${error.message ?: "Android 未允許背景處理"}"
+        }
     }
 
     fun setQuality(value: ExportQuality) {

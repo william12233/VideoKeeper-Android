@@ -112,6 +112,7 @@ import kotlin.math.max
 fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val context = LocalContext.current
     val activeTab by vm.activeTab
+    var pendingQueueStart by remember { mutableStateOf(false) }
     val multipleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { vm.importFiles(it) }
@@ -136,15 +137,31 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     ) { uri -> if (uri != null) vm.writeCsv(uri) }
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) {
+        // Do not start an FGS while the runtime permission dialog is covering the
+        // activity. Some Android 13+ devices reject that as a background start.
+        if (pendingQueueStart) {
+            pendingQueueStart = false
+            vm.enqueueSelected()
+        }
+    }
 
     fun startExport() {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            pendingQueueStart = true
+            runCatching {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }.onFailure {
+                // If the permission activity cannot be opened, the export itself
+                // is still allowed; the service will report its own error.
+                pendingQueueStart = false
+                vm.enqueueSelected()
+            }
+        } else {
+            vm.enqueueSelected()
         }
-        vm.enqueueSelected()
     }
 
     Scaffold(

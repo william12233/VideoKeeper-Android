@@ -42,15 +42,20 @@ object QueueStore {
         context.sendBroadcast(Intent(ACTION_QUEUE_UPDATED).setPackage(context.packageName))
     }
 
-    fun start(context: Context) {
+    /**
+     * Returns null when the service start request was accepted. Returning the
+     * exception instead of letting it escape the Compose click handler prevents
+     * an FGS policy/security error from crashing the activity.
+     */
+    fun start(context: Context): Throwable? = runCatching {
         val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_START)
         ContextCompat.startForegroundService(context, intent)
-    }
+    }.exceptionOrNull()
 
-    fun cancel(context: Context) {
+    fun cancel(context: Context): Throwable? = runCatching {
         val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_CANCEL)
         ContextCompat.startForegroundService(context, intent)
-    }
+    }.exceptionOrNull()
 
     private fun toJson(item: QueueItem) = JSONObject().apply {
         put("id", item.id)
