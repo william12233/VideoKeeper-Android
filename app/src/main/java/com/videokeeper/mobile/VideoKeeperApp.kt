@@ -113,17 +113,6 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val context = LocalContext.current
     val activeTab by vm.activeTab
     var pendingNotificationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val multipleLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { vm.importFiles(it) }
-    val folderLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            val name = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
-            vm.importFolder(uri, name)
-        }
-    }
     val destinationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -162,6 +151,22 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     }
 
     fun startExport() = runWithNotificationPermission { vm.enqueueSelected() }
+
+    val multipleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            runWithNotificationPermission { vm.importFiles(uris) }
+        }
+    }
+    val folderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val name = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
+            runWithNotificationPermission { vm.importFolder(uri, name) }
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -514,7 +519,7 @@ private fun SettingsScreen(vm: VideoKeeperViewModel) {
         }
         item {
             SettingsCard(title = "隱私與權限") {
-                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 原始檔唯讀，輸出由你指定資料夾\n✓ 背景工作進度與結果通知（需允許通知權限）", fontSize = 12.sp, color = VideoKeeperPalette.safe)
+                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 原始檔唯讀，輸出由你指定資料夾\n✓ 背景工作進度通知，完成後自動關閉（需允許通知權限）", fontSize = 12.sp, color = VideoKeeperPalette.safe)
             }
         }
     }

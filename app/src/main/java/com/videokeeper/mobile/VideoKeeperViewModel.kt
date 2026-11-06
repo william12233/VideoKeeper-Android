@@ -416,7 +416,7 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
             operation?.cancel()
             operation = null
             QueueStore.stopProcessingSession(app)
-            NotificationHelper.showResult(app, kind, "已取消目前工作，已保留已完成結果。", success = false)
+            NotificationHelper.cancelProgress(app)
             operationKind = null
         }
         stopping.set(true)
@@ -468,28 +468,19 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
             }
             try {
                 block()
-                if (token == operationToken) {
-                    NotificationHelper.showResult(
-                        app,
-                        kind,
-                        status.value,
-                        success = !stopping.get()
-                    )
-                }
             } catch (cancelled: CancellationException) {
                 if (token == operationToken) {
                     status.value = if (stopping.get()) "已取消目前工作，已保留已完成結果" else "工作被中斷"
-                    NotificationHelper.showResult(app, kind, status.value, success = false)
                 }
                 throw cancelled
             } catch (error: Throwable) {
                 if (token == operationToken) {
                     status.value = "${kind.label}失敗：${error.message ?: "未知錯誤"}"
-                    NotificationHelper.showResult(app, kind, status.value, success = false)
                 }
             } finally {
                 notificationTicker.cancel()
                 if (token == operationToken) {
+                    NotificationHelper.cancelProgress(app)
                     if (sessionStarted) QueueStore.stopProcessingSession(app)
                     busy.value = false
                     operation = null

@@ -46,7 +46,6 @@ class MediaProcessingService : Service() {
                 .forEach { item ->
                     QueueStore.update(this, item.copy(state = QueueState.FAILED, progress = 0, error = reason))
                 }
-            NotificationHelper.showExportResult(this, reason, success = false)
             runCatching { stopService() }
         }
         return START_NOT_STICKY
@@ -87,24 +86,33 @@ class MediaProcessingService : Service() {
             quality = quality,
             onUpdate = { item ->
                 QueueStore.update(this, item)
-                val percent = item.progress.coerceIn(0, 100)
+                val activeItems = QueueStore.load(this)
+                    .filter { candidate -> pending.any { it.id == candidate.id } }
+                val total = pending.size.coerceAtLeast(1)
+                val completed = activeItems.count {
+                    it.state == QueueState.SUCCEEDED ||
+                        it.state == QueueState.FAILED ||
+                        it.state == QueueState.CANCELLED
+                }
+                val currentProgress = if (item.state == QueueState.RUNNING) {
+                    item.progress.coerceIn(0, 100)
+                } else {
+                    0
+                }
+                val overallProgress = aggregateQueueProgress(total, completed, currentProgress)
+                val message = if (item.state == QueueState.RUNNING) {
+                    "已完成 $completed/$total 支・${item.name} ${item.progress.coerceIn(0, 100)}%"
+                } else {
+                    "已完成 $completed/$total 支"
+                }
                 startForegroundCompat(
-                    message = "${item.name}　$percent%",
-                    progress = percent,
+                    message = message,
+                    progress = overallProgress,
                     notificationId = NotificationHelper.EXPORT_NOTIFICATION_ID
                 )
             },
-            onFinish = { cancelled ->
+            onFinish = {
                 queue = null
-                val result = QueueStore.load(this)
-                val succeeded = result.count { it.state == QueueState.SUCCEEDED }
-                val failed = result.count { it.state == QueueState.FAILED }
-                val message = if (cancelled) {
-                    "已取消；成功 $succeeded 支、失敗 $failed 支"
-                } else {
-                    "成功 $succeeded 支、失敗 $failed 支；失敗項目未留下正式輸出"
-                }
-                NotificationHelper.showExportResult(this, message, success = !cancelled && failed == 0)
                 stopService()
             }
         ).also { it.start() }
@@ -146,6 +154,7 @@ class MediaProcessingService : Service() {
 
     private fun stopService() {
         processingSessionActive = false
+        NotificationHelper.cancelProgress(this)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -161,9 +170,6 @@ class MediaProcessingService : Service() {
     override fun onTimeout(startId: Int, fgsType: Int) {
         queue?.cancel()
         queue = null
-        if (processingSessionActive) {
-            NotificationHelper.showExportResult(this, "Android 已逾時停止背景處理，請重新開始分析。", success = false)
-        }
         processingSessionActive = false
         stopService()
     }

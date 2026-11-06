@@ -32,13 +32,12 @@ class AndroidContractTest {
         }
     }
 
-    @Test fun longOperationsHaveProgressAndResultNotificationChannels() {
+    @Test fun longOperationsHaveProgressNotificationChannel() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         NotificationHelper.createChannels(context)
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = context.getSystemService(NotificationManager::class.java)
             assertNotNull(manager.getNotificationChannel(NotificationHelper.PROCESSING_CHANNEL_ID))
-            assertNotNull(manager.getNotificationChannel(NotificationHelper.RESULT_CHANNEL_ID))
         }
     }
 }
