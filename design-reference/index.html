@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1321">
+  <meta name="description" content="影片管家：在手機瀏覽器本機批次辨識與裁切黑邊，依影片畫面尋找不同壓縮版本的重複影片。">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css">
+  <title>影片管家 · VideoKeeper Web</title>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48"><rect x="6" y="8" width="36" height="32" rx="10" fill="none" stroke="currentColor" stroke-width="3"/><path d="M17 17h4m-4 7h4m-4 7h4M27 16l10 8-10 8z" fill="currentColor"/></svg></span>
+        <span><strong>影片管家</strong><small>VideoKeeper · Web</small></span>
+      </div>
+      <span class="local-badge"><span class="status-dot"></span> 100% 本機處理</span>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">手機瀏覽器就能使用</div>
+        <h1>讓每支影片，<br><em>回到正確的樣子。</em></h1>
+        <p>一鍵檢查左右黑邊，還原直立影片；再用畫面指紋找出不同壓縮率的重複影片。全程不用上傳檔案。</p>
+        <div class="hero-tags"><span>自動裁切</span><span>內容去重</span><span>批次掃描</span><span>原檔保留</span></div>
+      </section>
+
+      <section class="upload-card" aria-label="匯入影片">
+        <div class="upload-heading">
+          <div><div class="section-eyebrow">STEP 01</div><h2>選擇影片</h2><p>可一次選取多支影片。分析僅在此裝置上進行。</p></div>
+          <span class="upload-symbol" aria-hidden="true">＋</span>
+        </div>
+        <div id="dropzone" class="dropzone" role="group" aria-label="匯入影片區域">
+          <div class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m10 8 7 4-7 4z" fill="currentColor"/></svg></div>
+          <strong>把影片加入工作區</strong>
+          <span>支援瀏覽器可播放的 MP4、MOV、WebM 等格式</span>
+          <div class="picker-actions">
+            <label class="btn btn-primary" for="fileInput">選擇多支影片</label>
+            <label class="btn btn-outline" for="folderInput">選擇整個資料夾</label>
+          </div>
+          <input id="fileInput" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv" multiple hidden>
+          <input id="folderInput" type="file" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv" webkitdirectory directory multiple hidden>
+          <small>部分手機瀏覽器不支援資料夾選取，請使用「選擇多支影片」。</small>
+        </div>
+        <div id="fileSummary" class="file-summary" hidden>
+          <div><strong id="countFiles">0</strong><span>影片</span></div><div><strong id="totalSize">0 MB</strong><span>原始大小</span></div>
+          <button id="clearFiles" class="subtle-btn" type="button">清空清單</button>
+        </div>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <div class="tabs" role="tablist" aria-label="影片工具">
+          <button id="tabCrop" class="tab is-active" role="tab" aria-selected="true" aria-controls="panelCrop">◩　黑邊裁切</button>
+          <button id="tabDupe" class="tab" role="tab" aria-selected="false" aria-controls="panelDupe">▤　相似影片</button>
+        </div>
+
+        <section id="panelCrop" class="panel" role="tabpanel" aria-labelledby="tabCrop">
+          <div class="panel-head"><div><div class="section-eyebrow">TOOL 01</div><h2>自動還原直立影片</h2><p>取樣多個時間點，僅對穩定的左右黑邊提出裁切建議。</p></div><button id="analyzeCrop" class="btn btn-primary" type="button">分析全部影片</button></div>
+          <div class="summary-strip"><span id="cropSummary">尚未分析</span><span>不確定的影片可手動調整</span></div>
+          <div id="cropList" class="file-list"></div>
+
+          <div id="cropEditor" class="editor" hidden>
+            <div class="editor-head"><h3>裁切預覽</h3><span id="editorName" class="truncate"></span></div>
+            <div class="preview-grid">
+              <div class="preview-cell"><div class="preview-label">原始畫面與裁切區</div><div class="preview-stage"><canvas id="beforeCanvas" aria-label="原始影片預覽"></canvas></div></div>
+              <div class="preview-cell"><div class="preview-label">裁切後預覽</div><div class="preview-stage preview-after"><canvas id="afterCanvas" aria-label="裁切後預覽"></canvas></div></div>
+            </div>
+            <div class="range-grid"><label>左側裁切 <strong id="leftValue">0%</strong><input id="leftRange" type="range" min="0" max="45" step="0.1" value="0"></label><label>右側裁切 <strong id="rightValue">0%</strong><input id="rightRange" type="range" min="0" max="45" step="0.1" value="0"></label></div>
+            <div class="editor-footer"><span id="outputResolution">輸出尺寸：—</span><button id="resetCrop" class="btn btn-outline btn-small" type="button">恢復偵測值</button></div>
+          </div>
+
+          <div class="export-panel"><div><h3>匯出裁切影片</h3><p>依原片播放速度重新編碼並保留可擷取的音訊。輸出格式依瀏覽器支援而定。</p></div>
+            <label class="quality-label">匯出引擎<select id="engineSelect"><option value="auto">⚡ 智慧加速（優先使用）</option><option value="legacy">相容模式（即時錄製）</option></select></label>
+            <div id="engineStatus" class="engine-status" role="status">檢查瀏覽器的高速轉檔支援中…</div>
+            <label class="quality-label">輸出品質<select id="qualitySelect"><option value="high">高品質</option><option value="medium">標準品質</option><option value="max">最高品質（檔案較大）</option></select></label>
+            <div class="export-actions"><button id="exportSelected" class="btn btn-primary" type="button">批次輸出已勾選影片</button><button id="cancelJob" class="btn btn-outline" type="button" hidden>停止工作</button></div>
+            <div class="note">高速模式使用瀏覽器 WebCodecs 與 MP4 封裝（首次載入需連網取得轉檔引擎）；影片檔只在裝置內處理，實際速度依手機與格式不同。若瀏覽器不支援，則改用相容模式，需要接近影片長度的時間。建議以 HTTPS 網址開啟以啟用高速模式，避免在背景執行；大型影片可能受到記憶體限制。</div>
+          </div>
+          <div id="outputs" class="outputs" hidden><h3>已完成的輸出</h3><div id="outputList"></div><button id="clearOutputs" class="subtle-btn" type="button">清除暫存輸出、釋放記憶體</button></div>
+        </section>
+
+        <section id="panelDupe" class="panel" role="tabpanel" aria-labelledby="tabDupe" hidden>
+          <div class="panel-head"><div><div class="section-eyebrow">TOOL 02</div><h2>依影片內容尋找重複檔案</h2><p>利用多個畫格的感知指紋，而非檔名、檔案大小或雜湊值。</p></div><button id="analyzeDupe" class="btn btn-primary" type="button">掃描全部影片</button></div>
+          <div class="summary-strip"><span id="dupeSummary">尚未掃描</span><button id="exportCsv" class="subtle-btn" type="button" disabled>匯出 CSV 報告</button></div>
+          <div id="dupeResults" class="dupe-results"><div class="empty-state"><span>◎</span><strong>等待比對</strong><p>加入至少兩支影片，開始掃描內容相似度。</p></div></div>
+          <div class="note">相同影片即使被重新壓縮、縮小解析度，通常仍會有相近的指紋；但嚴重剪輯、轉場變動或高度相似的不同影片，仍可能誤判。掃描結果不會自動刪除任何檔案。</div>
+        </section>
+      </section>
+
+      <section id="progressPanel" class="progress-panel" hidden aria-live="polite"><div class="progress-head"><strong id="progressTitle">正在處理</strong><span id="progressPercent">0%</span></div><div class="progress-track"><div id="progressBar"></div></div><p id="progressDetail">—</p></section>
+    </main>
+    <footer><strong>影片管家 VideoKeeper</strong><span>離線優先 · 零上傳 · 不刪除原始檔</span><small>本工具僅處理你主動選取的影片；瀏覽器不支援解碼的格式可能無法分析。</small></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>

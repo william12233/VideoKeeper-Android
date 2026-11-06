@@ -1,0 +1,9 @@
+【Codex Cloud 建立／測試環境請貼上】
+本 Repo 是 Android Kotlin 原生影片工具。請建立可重用且能發布的雲端開發環境：
+1. 檢查 Gradle Kotlin DSL 與 AGP 相容性，安裝 JDK 17；配置 ANDROID_HOME / ANDROID_SDK_ROOT 與 Android Command-line Tools、SDK Platform API 36、Build Tools 36.0.0、Platform Tools。
+2. 用官方 `gradle wrapper` 重建或驗證 8.13 的標準 Gradle Wrapper：此 Repo 起始版本原本的 wrapper JAR 是自製啟動器，必須替換成官方完整 Wrapper 並保留 Wrapper properties，不能把不明下載器當成正式 Wrapper。
+3. 安裝專案所需 Gradle / AndroidX / Media3 依賴。Media3 起始鎖定官方穩定 1.11.1；不要使用未確認相容的 alpha 版。
+4. 執行 `./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace`，確認有非空 APK；若專案原始碼存在編譯錯誤，明確列出並修復（如果環境 setup 不允許改原始碼，先完成環境並在正式任務修復）。
+5. 若雲端磁碟空間不足，優先使用 GitHub Actions CI 編譯驗證，Codex Cloud 著重編輯/測試；不得宣稱已成功編譯。
+6. Android App 不需網站、DB、Docker 或私有後端；不要產生或要求私有金鑰，Release 簽章必須使用 GitHub Actions secrets。
+7. 記錄 setup/install script、檢查結果，儲存並 Publish 雲端環境。

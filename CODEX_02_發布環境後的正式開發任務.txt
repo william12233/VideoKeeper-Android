@@ -1,0 +1,42 @@
+【Codex Cloud 發布環境後請貼上：完整正式任務】
+
+你是 Android Media 系統、影像演算法、Jetpack Compose、Gradle 與 GitHub Actions 的資深工程師。
+現在在 `VideoKeeper-Android` Repository 從既有 Kotlin 專案完成「影片管家」正式 Android App。Repo 中有 `AGENTS.md`、既有核心程式、設計參考 `design-reference`、Web 原始 SVG Logo、Android Launcher Icon 與 CI/CD 草稿；請先實際讀取，然後落實以下所有要求。這不是要求產生規格草稿，請直接編寫、測試及提交真正能執行的程式碼。
+
+一、產品需求（Android 原生，不是 WebView）
+- 深藍／淺水藍精緻 Material 3 繁體中文 UI；主要頁面：影片匯入、黑邊裁切、相似影片、工作佇列、設定。圖示必須使用 Web 左上角現有品牌標誌（使用提供的 adaptive icon vector、PNG、monochrome），不得使用預設 Android 機器人圖示。
+- 從手機 SAF 選取多部影片、選擇資料夾與子資料夾批次掃描；保存合法的 URI 授權，不要求全檔案管理權限，也不請求網路權限；維持資料夾掃描結果並可取消。
+- 顯示縮圖、檔名、長度、解析度、檔案大小、是否需裁切、信心指標及選取狀態；操作流程直觀，不能出現未分析就秒完成的假成功。
+- 支援橫向影片左右固定黑邊自動裁切，抽樣不同時間點避免全黑場景／片頭；先透過畫格縮圖偵測邊界、用穩健統計與安全閾值避免誤裁切。遇到不穩定、有色邊、動態模糊背景、旋轉 metadata 或對稱性不足時改列人工確認，不能強裁。
+- 編輯器必須呈現原始影片（標示裁切框）和真正已裁切影片的預覽（無黑色假黑邊；使用與影片內容不同的藍灰底）；支援即時左右滑桿調整、重設、自動建議、解析度估算以及可操作的播放時間點。Canvas/Texture 邊界與輸出一致。
+
+二、唯一匯出引擎與效率
+- 只使用 Android Media3 Transformer + Android MediaCodec 硬體解／編碼 + OpenGL 畫面裁切；禁止 MediaRecorder 依影片播放速度錄影、FFmpeg.wasm、軟體 CPU fallback 或 WebView 匯出。
+- 使用官方 Crop effect，處理旋轉 metadata、準確 pixel aspect、輸出尺寸偶數、時間戳、fps、audio mapping／passthrough、HDR/SDR、可讀的錯誤訊息；如某機型無可用硬體編碼器，標示無法高速匯出，不能默默改成慢速模式。
+- 預設產出相容性高的 H.264/AAC MP4；可評估在硬體 codec 可用時使用 HEVC，但不得犧牲音訊、畫質、相容性或速度。比較實際硬體支援與編碼效果，選出此類影片較適合的配置；不要一概追求 HEVC。
+- 提供品質選擇、硬體能力顯示、逐檔進度、成功／失敗原因、耗時與速度倍數（根據真的完成結果計算）。若轉出影片無聲或音訊異常，必須判失敗或明確提示。
+- 以 mediaProcessing Foreground Service/工作佇列管理長影片與批次工作（符合目標 Android API 的權限、通知與限時），支援暫停/取消和失敗略過，避免螢幕關閉或 Activity 銷毀造成狀態遺失。針對 Android 15+ 前景媒體處理 6 小時限制做正確處理。
+- 只寫新檔到使用者選定目錄；使用 app cache 暫存、SAF/MediaStore 複製並作完整性檢查，失敗清除不完整檔；不可覆蓋來源。
+
+三、影片內容去重
+- 第一層：低解析度抽幀，黑邊正規化，pHash + dHash + 亮度／顏色特徵；把不同壓縮率、尺寸、編碼容器視為可能同片。
+- 第二層：用多時間點與有界時間偏移／局部對齊，處理片頭片尾些微剪輯；對候選對做 SSIM/感知影格驗證，排除共同黑畫面、片頭 Logo、類似場景造成的誤判。逐段高度重疊才能列高可信，不把簡單的相似分數叫做數學機率。
+- 針對大數量影片建立內容指紋的 Room 快取（用 URI、長度、尺寸、修改時間、抽樣設計／版本等無敏感索引鍵），做候選縮減避免全部 pair 二次解碼。儲存本機，支援清除快取。
+- 結果顯示每組候選的預覽、相似度、差異、品質比較（解析度、fps、碼率、影音格式、片長）；可勾選保留版本並匯出 CSV，但預設沒有刪檔功能。
+- 對未知編碼／沒有足夠有效畫格者標示無法分析，不可誤寫「無重複」。
+
+四、工程品質與測試
+- 使用 Kotlin、Jetpack Compose Material3、正式版 Media3、正確 Gradle Wrapper、離線 app，本機處理。
+- 可分模組：storage, scan, crop, preview, export, duplicate, database, ui；以可測試的純 Kotlin 演算法封裝核心。
+- 建立黑邊測試：固定黑邊、片頭全黑、低光、兩側不對稱、無黑邊、旋轉 metadata、直立來源、動態背景、混合解析度。
+- 建立去重測試：不同 H.264 碼率、解析度、黑邊、新增 1-3 秒片頭／片尾、相似但不相同影片、音訊缺失。用匿名程式生成的媒體，不要放真實私人影片進公開 Repo。
+- 實際跑 `./gradlew :app:testDebugUnitTest :app:assembleDebug`，上傳成功的 CI build artifact；如果環境可用，進行 emulator instrumentation 與輸出影片長寬比/音訊軌/播放驗證。若沒有 Android 實機或硬體 codec，清楚標示哪些項目尚待實機驗證。
+- 保留簽章配置與 `release.yml`；僅在 GitHub Actions secrets 備妥、簽章驗證成功、測試成功後才允許發正式 Release，不可把暫時性 debug key 當永久正式簽章。
+- 修正所有編譯錯誤與合理程度內的執行問題，不准留空函式、假的完成訊息、示範性 mock 功能、未經實測的倍速宣稱。請提交具有清楚 commits 的更動並回報實際測試結果。
+
+五、GitHub Release
+- 建置與安全檢查通過後，使用 GitHub Actions workflow 對 tag `v1.0.0` 建置簽章 Release APK，附上 SHA256SUMS 與繁體中文 Release notes。
+- 若尚未設定 Android signing secrets，不要自行建立不可保存的臨時簽章並聲稱完成正式 Release；先讓 CI 產出可供測試的 Debug APK artifact，再明確列出需要使用者補上的 secrets，並在環境授權後完成 Release。
+- 最後提供 Repo、CI logs/結果、APK artifact、Release 連結及已知限制；絕對不能宣稱未實際成功的動作已完成。
+
+你可主動改良演算法或 UI，但所有改動不得破壞「高品質高速輸出、手機本機處理、保留原檔、無黑底假黑邊」四項核心要求。

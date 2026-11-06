@@ -1,0 +1,16 @@
+.gradle/
+build/
+app/build/
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Private signing artifacts must never be committed
+*.jks
+*.keystore
+release-key.properties
+*.apk
+
+# Kotlin compiler local caches
+.kotlin/

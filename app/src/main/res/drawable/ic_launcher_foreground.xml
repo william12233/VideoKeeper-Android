@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="192" android:viewportHeight="192">
+    <!-- 由 Web 左上角的「影片方框＋播放三角形」原圖等比例製作；
+         圖案縮至 adaptive icon 安全區，避免圓形遮罩切掉標誌。 -->
+    <path android:fillColor="#18374C" android:strokeColor="#8EDCF5"
+        android:strokeWidth="5.76"
+        android:pathData="M67.9,52.8 L124.1,52.8 C136,52.8 145.7,62.5 145.7,74.4 L145.7,117.6 C145.7,129.5 136,139.2 124.1,139.2 L67.9,139.2 C56,139.2 46.3,129.5 46.3,117.6 L46.3,74.4 C46.3,62.5 56,52.8 67.9,52.8 Z"/>
+    <path android:fillColor="#00000000" android:strokeColor="#8EDCF5"
+        android:strokeWidth="5.76" android:strokeLineCap="round"
+        android:pathData="M73.7,75.1 L85.9,75.1 M73.7,96 L85.9,96 M73.7,116.9 L85.9,116.9"/>
+    <path android:fillColor="#8EDCF5"
+        android:pathData="M103.2,73.7 L136.3,96 L103.2,118.3 Z"/>
+</vector>
