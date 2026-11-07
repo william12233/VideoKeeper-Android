@@ -781,8 +781,12 @@ private fun CropEditorDialog(
     onReset: () -> Unit
 ) {
     var fraction by remember(entry.id) { mutableFloatStateOf(0.5f) }
-    var left by remember(entry.id) { mutableFloatStateOf(entry.crop.left) }
-    var right by remember(entry.id) { mutableFloatStateOf(entry.crop.right) }
+    var left by remember(entry.id) {
+        mutableFloatStateOf(CropMath.clampManualCropSide(entry.crop.left, entry.crop.right))
+    }
+    var right by remember(entry.id) {
+        mutableFloatStateOf(CropMath.clampManualCropSide(entry.crop.right, entry.crop.left))
+    }
     val bitmap = rememberVideoFrame(entry.uri, fraction)
     val cropped = remember(bitmap, left, right) { bitmap?.let { makeCroppedBitmap(it, left, right) } }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -808,9 +812,19 @@ private fun CropEditorDialog(
                     }
                 }
                 Text("左側裁切 ${percent(left)}", fontSize = 12.sp)
-                Slider(value = left, onValueChange = { left = minOf(it, 0.44f - right) }, valueRange = 0f..0.44f)
+                val leftMax = CropMath.maxManualCropSide(right)
+                Slider(
+                    value = left.coerceIn(0f, leftMax),
+                    onValueChange = { left = CropMath.clampManualCropSide(it, right) },
+                    valueRange = 0f..leftMax
+                )
                 Text("右側裁切 ${percent(right)}", fontSize = 12.sp)
-                Slider(value = right, onValueChange = { right = minOf(it, 0.44f - left) }, valueRange = 0f..0.44f)
+                val rightMax = CropMath.maxManualCropSide(left)
+                Slider(
+                    value = right.coerceIn(0f, rightMax),
+                    onValueChange = { right = CropMath.clampManualCropSide(it, left) },
+                    valueRange = 0f..rightMax
+                )
                 Text(
                     "預估輸出：${CropMath.outputDimension(entry.width, left, right)} × ${entry.height - entry.height % 2}",
                     fontSize = 12.sp,
@@ -819,7 +833,10 @@ private fun CropEditorDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = {
                         onReset()
-                        entry.suggestedCrop?.let { left = it.left; right = it.right }
+                        entry.suggestedCrop?.let {
+                            left = CropMath.clampManualCropSide(it.left, it.right)
+                            right = CropMath.clampManualCropSide(it.right, left)
+                        }
                     }) { Text("重設偵測值") }
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text("取消") }

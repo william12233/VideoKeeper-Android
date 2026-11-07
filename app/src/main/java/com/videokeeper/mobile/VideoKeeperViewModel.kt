@@ -397,13 +397,15 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
 
     fun applyManualCrop(id: String, left: Float, right: Float) {
         find(id)?.let { entry ->
+            val safeLeft = CropMath.clampManualCropSide(left, right)
+            val safeRight = CropMath.clampManualCropSide(right, safeLeft)
             val crop = CropDecision(
-                left = CropMath.normalizedCrop(left),
-                right = CropMath.normalizedCrop(right),
+                left = safeLeft,
+                right = safeRight,
                 kind = CropKind.REVIEW,
                 note = "已人工調整，輸出前請再次預覽",
                 confidence = 100,
-                selected = left + right > 0.015f
+                selected = safeLeft + safeRight > 0.015f
             )
             replace(entry.copy(crop = crop, cropState = AnalysisState.NEEDS_REVIEW))
         }

@@ -47,4 +47,10 @@ class MediaModelUnitTest {
         assertEquals(718, crop?.outputHeight)
         assertTrue(crop!!.bottom > 0f)
     }
+
+    @Test fun manualCropSliderAllowsBothSidesUpToTheirOwnLimit() {
+        assertEquals(.44f, CropMath.maxManualCropSide(.30f), .0001f)
+        assertEquals(.40f, CropMath.clampManualCropSide(.40f, .30f), .0001f)
+        assertTrue(CropMath.clampManualCropSide(.44f, .44f) + .44f < .88f)
+    }
 }

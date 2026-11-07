@@ -18,13 +18,13 @@
 
 結果：
 
-- `:app:testDebugUnitTest` 成功：23 tests，0 failed、0 error、0 skipped；包含裁切狀態篩選與批次進度換算。
+- `:app:testDebugUnitTest` 成功：24 tests，0 failed、0 error、0 skipped；包含裁切狀態篩選、批次進度換算與手動裁切滑桿範圍。
 - 純 Kotlin 覆蓋固定/不對稱黑邊、片頭全黑、直式來源、旋轉 metadata、動態不穩定、偶數輸出尺寸、時間偏移指紋、Room codec、批次通知進度與輸出檔名規則。
 - `:app:compileDebugAndroidTestKotlin` 成功；instrumentation test 會檢查 APK 沒有 INTERNET 權限、宣告 mediaProcessing service，並建立進度通知頻道。
 - `:app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - `:app:lintDebug` 成功；只保留 Android SDK/依賴版本提醒與 Compose/Media3 API 相容性警告，沒有 lint error。
-- APK SHA-256（本次本機 Debug 產物）：`8abdcd9d1f005262aa7260111c524ec31fd0833d124f6480ddc134e1253dc4f0`。
-- APK 大小：67,779,687 bytes（約 64.6 MiB）。
+- APK SHA-256（本次本機 Debug 產物）：`3d27d252a29b58a3197236185c04e5df1e01bcf16f6ce8488966dd5c747c837a`。
+- APK 大小：67,780,415 bytes（約 64.6 MiB）。
 - `apksigner verify --verbose --print-certs` 成功：APK Signature Scheme v2；簽章者為 Android Debug，沒有使用正式 Release 私鑰。
 - CI workflow 會對 Debug APK 再執行 `apksigner verify`、產生 `SHA256SUMS.txt`，並上傳 `VideoKeeper-debug-APK` artifact。
 - 佇列頁上方會以持久化批次資料顯示整批進度；Activity 從通知重建後仍可恢復 `完成數/總數` 與目前項目進度。裁切頁提供待分析、分析中、待確認、不需裁切、已確認／裁切、未勾選及失敗／不支援篩選。

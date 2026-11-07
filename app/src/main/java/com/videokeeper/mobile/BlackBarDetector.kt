@@ -111,6 +111,11 @@ object BlackBarDetector {
 }
 
 object CropMath {
+    private const val MAX_MANUAL_SIDE = 0.44f
+    // Leave a small margin below 0.88 so the export preflight never receives
+    // the exact invalid boundary accepted by a UI slider.
+    private const val MAX_MANUAL_TOTAL = 0.879f
+
     data class EncoderCrop(
         val left: Float,
         val right: Float,
@@ -126,7 +131,15 @@ object CropMath {
         return value - value % 2
     }
 
-    fun normalizedCrop(value: Float): Float = value.coerceIn(0f, 0.44f)
+    fun normalizedCrop(value: Float): Float = value.coerceIn(0f, MAX_MANUAL_SIDE)
+
+    /** Maximum value one side may take while preserving a valid total crop. */
+    fun maxManualCropSide(otherSide: Float): Float =
+        (MAX_MANUAL_TOTAL - normalizedCrop(otherSide)).coerceIn(0f, MAX_MANUAL_SIDE)
+
+    /** Clamps a manually entered side without creating an invalid total crop. */
+    fun clampManualCropSide(value: Float, otherSide: Float): Float =
+        value.coerceIn(0f, maxManualCropSide(otherSide))
 
     /**
      * Converts the user crop into pixel-aligned bounds for Media3 Crop.
