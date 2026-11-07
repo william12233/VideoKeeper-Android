@@ -384,40 +384,6 @@ private fun CropScreen(
                 }
             }
         }
-        if (vm.videos.isEmpty()) {
-            item { EmptyCard("先加入影片", "回到「匯入」頁選取影片或資料夾。") }
-        } else {
-            item {
-                Text("依分析狀態快速篩選", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    CropFilter.values().forEach { filter ->
-                        val count = vm.videos.count { matchesCropFilter(it, filter) }
-                        FilterChip(
-                            selected = cropFilter == filter,
-                            onClick = { cropFilter = filter },
-                            label = { Text("${filter.label} $count", fontSize = 11.sp) }
-                        )
-                    }
-                }
-            }
-            item { SectionHeader("裁切清單", "${filteredVideos.size}/${vm.videos.size} 支") }
-            if (filteredVideos.isEmpty()) {
-                item { EmptyCard("此狀態沒有影片", "請切換上方篩選條件。") }
-            } else {
-                items(filteredVideos, key = { it.id }) { entry ->
-                    CropEntryCard(
-                        entry = entry,
-                        onChecked = { vm.toggleCropSelection(entry.id, it) },
-                        onEdit = { editorEntry = entry }
-                    )
-                }
-            }
-        }
         item {
             val moveText = when {
                 vm.destinationFolderUri.value == null -> "移動未勾選影片（請先設定輸出資料夾）"
@@ -455,6 +421,40 @@ private fun CropScreen(
             )
             if (vm.destinationFolderUri.value == null) {
                 Text("請先在「匯入」頁設定輸出資料夾。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (vm.videos.isEmpty()) {
+            item { EmptyCard("先加入影片", "回到「匯入」頁選取影片或資料夾。") }
+        } else {
+            item {
+                Text("依分析狀態快速篩選", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    CropFilter.values().forEach { filter ->
+                        val count = vm.videos.count { matchesCropFilter(it, filter) }
+                        FilterChip(
+                            selected = cropFilter == filter,
+                            onClick = { cropFilter = filter },
+                            label = { Text("${filter.label} $count", fontSize = 11.sp) }
+                        )
+                    }
+                }
+            }
+            item { SectionHeader("裁切清單", "${filteredVideos.size}/${vm.videos.size} 支") }
+            if (filteredVideos.isEmpty()) {
+                item { EmptyCard("此狀態沒有影片", "請切換上方篩選條件。") }
+            } else {
+                items(filteredVideos, key = { it.id }) { entry ->
+                    CropEntryCard(
+                        entry = entry,
+                        onChecked = { vm.toggleCropSelection(entry.id, it) },
+                        onEdit = { editorEntry = entry }
+                    )
+                }
             }
         }
     }
@@ -1148,7 +1148,7 @@ private fun videoMetadata(entry: VideoEntry): String {
 private fun qualityLabel(quality: ExportQuality): String = when (quality) {
     ExportQuality.STANDARD -> "標準"
     ExportQuality.HIGH -> "高品質"
-    ExportQuality.MAXIMUM -> "最高"
+    ExportQuality.ORIGINAL -> "原始畫質"
 }
 
 private fun percent(value: Float): String = "%.1f%%".format(Locale.US, value * 100)

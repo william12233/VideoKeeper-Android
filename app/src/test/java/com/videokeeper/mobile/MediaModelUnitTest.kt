@@ -53,4 +53,11 @@ class MediaModelUnitTest {
         assertEquals(.40f, CropMath.clampManualCropSide(.40f, .30f), .0001f)
         assertTrue(CropMath.clampManualCropSide(.44f, .44f) + .44f < .88f)
     }
+
+    @Test fun exportQualityOriginalUsesSourceBitrate() {
+        val info = VideoInfo(bitrate = 4_000_000)
+        assertEquals(4_000_000, ExportQuality.ORIGINAL.bitrate(info, 1280, 720))
+        assertEquals(3_120_000, ExportQuality.STANDARD.bitrate(info, 1280, 720))
+        assertEquals(4_000_000, ExportQuality.HIGH.bitrate(info, 1280, 720))
+    }
 }

@@ -415,14 +415,14 @@ class ExportQueue(
     private fun now(): Long = System.currentTimeMillis()
 }
 
-enum class ExportQuality { STANDARD, HIGH, MAXIMUM;
+enum class ExportQuality { STANDARD, HIGH, ORIGINAL;
     fun bitrate(info: VideoInfo?, width: Int, height: Int): Int {
         val source = info?.bitrate?.takeIf { it > 0 }
             ?: (width.toLong() * height.toLong() * 4L).coerceIn(1_000_000L, 24_000_000L).toInt()
         return when (this) {
             STANDARD -> (source * 0.78f).toInt().coerceAtLeast(1_000_000)
             HIGH -> source.coerceAtLeast(1_500_000)
-            MAXIMUM -> (source * 1.15f).toInt().coerceAtMost(50_000_000)
+            ORIGINAL -> source
         }
     }
 }
