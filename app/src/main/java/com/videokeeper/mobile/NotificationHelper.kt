@@ -30,7 +30,9 @@ internal fun aggregateQueueProgress(
 
 /** Central notification contract for operations that can continue after the UI is backgrounded. */
 object NotificationHelper {
-    const val PROCESSING_CHANNEL_ID = "videokeeper-processing-v2"
+    // v3 intentionally replaces the old channel so an existing installation
+    // cannot retain its previous vibration setting.
+    const val PROCESSING_CHANNEL_ID = "videokeeper-processing-v3"
     const val EXPORT_NOTIFICATION_ID = 2401
     const val SESSION_NOTIFICATION_ID = 2402
 
@@ -40,9 +42,11 @@ object NotificationHelper {
             NotificationChannel(
                 PROCESSING_CHANNEL_ID,
                 "影片處理進度",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "影片管家分析、去重與硬體轉檔進度"
+                setSound(null, null)
+                enableVibration(false)
             }
         )
     }
@@ -59,6 +63,7 @@ object NotificationHelper {
             .setContentTitle(title)
             .setContentText(message)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

@@ -1,9 +1,14 @@
 package com.videokeeper.mobile
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -114,7 +119,8 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val context = LocalContext.current
     val activeTab by vm.activeTab
     val queueProgress = vm.queueOverallProgress()
-    var pendingNotificationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var requestBatteryPrompt by remember { mutableStateOf(false) }
+    var requestBatteryAfterNotification by remember { mutableStateOf(false) }
     val destinationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -129,36 +135,63 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
-        // Start the user-requested operation only after the permission dialog is
-        // gone. Android 13+ can reject an FGS start while that dialog is visible.
-        val action = pendingNotificationAction
-        pendingNotificationAction = null
-        action?.invoke()
-    }
-
-    fun runWithNotificationPermission(action: () -> Unit) {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            pendingNotificationAction = action
-            runCatching {
-                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }.onFailure {
-                pendingNotificationAction = null
-                action()
-            }
-        } else {
-            action()
+        if (requestBatteryAfterNotification) {
+            requestBatteryAfterNotification = false
+            requestBatteryPrompt = true
         }
     }
 
-    fun startExport() = runWithNotificationPermission { vm.enqueueSelected() }
+    fun openBatteryOptimizationPrompt() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        if (powerManager.isIgnoringBatteryOptimizations(context.packageName)) return
+        val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+        runCatching {
+            context.startActivity(request)
+        }.onFailure {
+            runCatching {
+                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+    }
+
+    LaunchedEffect(requestBatteryPrompt) {
+        if (requestBatteryPrompt) {
+            requestBatteryPrompt = false
+            openBatteryOptimizationPrompt()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val preferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        if (!preferences.getBoolean("startup_permissions_prompted", false)) {
+            preferences.edit().putBoolean("startup_permissions_prompted", true).apply()
+            NotificationHelper.createChannels(context)
+            if (Build.VERSION.SDK_INT >= 33 &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                requestBatteryAfterNotification = true
+                runCatching {
+                    notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }.onFailure {
+                    requestBatteryAfterNotification = false
+                    requestBatteryPrompt = true
+                }
+            } else {
+                requestBatteryPrompt = true
+            }
+        }
+    }
+
+    fun startExport() = vm.enqueueSelected()
 
     val multipleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
-            runWithNotificationPermission { vm.importFiles(uris) }
+            vm.importFiles(uris)
         }
     }
     val folderLauncher = rememberLauncherForActivityResult(
@@ -166,7 +199,7 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     ) { uri ->
         if (uri != null) {
             val name = androidx.documentfile.provider.DocumentFile.fromTreeUri(context, uri)?.name
-            runWithNotificationPermission { vm.importFolder(uri, name) }
+            vm.importFolder(uri, name)
         }
     }
 
@@ -265,13 +298,13 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
                 AppTab.CROP -> CropScreen(
                     vm = vm,
                     startExport = { startExport() },
-                    startAnalysis = { runWithNotificationPermission(vm::analyzeCrop) },
-                    moveUnselected = { runWithNotificationPermission(vm::moveUnselectedToDestination) }
+                    startAnalysis = vm::analyzeCrop,
+                    moveUnselected = vm::moveUnselectedToDestination
                 )
                 AppTab.DUPLICATES -> DuplicateScreen(
                     vm = vm,
                     csvLauncher = csvLauncher,
-                    startAnalysis = { runWithNotificationPermission(vm::analyzeDuplicates) }
+                    startAnalysis = vm::analyzeDuplicates
                 )
                 AppTab.QUEUE -> QueueScreen(vm)
                 AppTab.SETTINGS -> SettingsScreen(vm)

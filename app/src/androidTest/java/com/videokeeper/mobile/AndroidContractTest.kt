@@ -21,6 +21,8 @@ class AndroidContractTest {
             android.content.pm.PackageManager.GET_PERMISSIONS or android.content.pm.PackageManager.GET_SERVICES
         )
         assertFalse(packageInfo.requestedPermissions.orEmpty().contains("android.permission.INTERNET"))
+        assertTrue(packageInfo.requestedPermissions.orEmpty().contains("android.permission.POST_NOTIFICATIONS"))
+        assertTrue(packageInfo.requestedPermissions.orEmpty().contains("android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"))
         val activity = context.packageManager.getActivityInfo(
             android.content.ComponentName(context, MainActivity::class.java),
             0
@@ -43,7 +45,10 @@ class AndroidContractTest {
         NotificationHelper.createChannels(context)
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = context.getSystemService(NotificationManager::class.java)
-            assertNotNull(manager.getNotificationChannel(NotificationHelper.PROCESSING_CHANNEL_ID))
+            val channel = manager.getNotificationChannel(NotificationHelper.PROCESSING_CHANNEL_ID)
+                ?: error("processing notification channel was not created")
+            assertFalse(channel.shouldVibrate())
+            assertTrue(channel.sound == null)
         }
     }
 }
