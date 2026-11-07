@@ -93,7 +93,12 @@ object NotificationHelper {
     private fun mainActivityIntent(context: Context): PendingIntent = PendingIntent.getActivity(
         context,
         0,
-        Intent(context, MainActivity::class.java),
+        Intent(context, MainActivity::class.java).apply {
+            // Reuse the Activity that owns the active ViewModel. Without these
+            // flags Android can put a second MainActivity on the task stack;
+            // that new instance looks like a fresh app and hides the progress.
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        },
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 }

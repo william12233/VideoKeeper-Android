@@ -23,8 +23,8 @@
 - `:app:compileDebugAndroidTestKotlin` 成功；instrumentation test 會檢查 APK 沒有 INTERNET 權限、宣告 mediaProcessing service，並建立進度通知頻道。
 - `:app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - `:app:lintDebug` 成功；只保留 Android SDK/依賴版本提醒與 Compose/Media3 API 相容性警告，沒有 lint error。
-- APK SHA-256（本次本機 Debug 產物）：`f0da34f759b0e3b30b9b222e115fa4c79623f33246f12ec2315dc8ba5e7971f8`。
-- APK 大小：67,718,639 bytes（約 64.6 MiB）。
+- APK SHA-256（本次本機 Debug 產物）：`6bc8195ced5918bf5185c883ec35e6941ad7b246c5782e74f4181c08b699176d`。
+- APK 大小：67,718,979 bytes（約 64.6 MiB）。
 - `apksigner verify --verbose --print-certs` 成功：APK Signature Scheme v2；簽章者為 Android Debug，沒有使用正式 Release 私鑰。
 - CI workflow 會對 Debug APK 再執行 `apksigner verify`、產生 `SHA256SUMS.txt`，並上傳 `VideoKeeper-debug-APK` artifact。
 

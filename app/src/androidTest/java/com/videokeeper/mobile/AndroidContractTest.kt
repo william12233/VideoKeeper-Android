@@ -1,6 +1,7 @@
 package com.videokeeper.mobile
 
 import android.app.NotificationManager
+import android.content.pm.ActivityInfo
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,6 +21,11 @@ class AndroidContractTest {
             android.content.pm.PackageManager.GET_PERMISSIONS or android.content.pm.PackageManager.GET_SERVICES
         )
         assertFalse(packageInfo.requestedPermissions.orEmpty().contains("android.permission.INTERNET"))
+        val activity = context.packageManager.getActivityInfo(
+            android.content.ComponentName(context, MainActivity::class.java),
+            0
+        )
+        assertTrue(activity.launchMode == ActivityInfo.LAUNCH_SINGLE_TOP)
         val service = context.packageManager.getServiceInfo(
             android.content.ComponentName(context, MediaProcessingService::class.java),
             android.content.pm.PackageManager.GET_META_DATA
