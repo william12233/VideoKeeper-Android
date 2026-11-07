@@ -48,6 +48,14 @@ class MediaModelUnitTest {
         assertTrue(crop!!.bottom > 0f)
     }
 
+    @Test fun encoderCropCanHonorHardwareMacroblockAlignment() {
+        val crop = CropMath.encoderCrop(1280, 720, .342f, .342f, 16, 16)
+        assertNotNull(crop)
+        assertEquals(400, crop?.outputWidth)
+        assertEquals(720, crop?.outputHeight)
+        assertTrue(crop!!.outputWidth % 16 == 0)
+    }
+
     @Test fun manualCropSliderAllowsBothSidesUpToTheirOwnLimit() {
         assertEquals(.44f, CropMath.maxManualCropSide(.30f), .0001f)
         assertEquals(.40f, CropMath.clampManualCropSide(.40f, .30f), .0001f)

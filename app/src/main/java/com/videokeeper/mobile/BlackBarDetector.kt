@@ -147,21 +147,25 @@ object CropMath {
      * Media3 calculates its output size with Math.round(input * cropFraction).
      * Passing arbitrary detector floats can therefore produce an odd encoder
      * width (for example 365 px), which is rejected by several H.264 hardware
-     * encoders. We crop at least the requested number of pixels and use an even
-     * output width/height. The possible extra crop is at most one pixel per
-     * affected edge and is safer than exposing a detected black bar or asking
-     * the hardware encoder for an unsupported frame size.
+     * encoders. We crop at least the requested number of pixels and accept a
+     * caller-provided hardware alignment. The possible extra crop is taken
+     * from the trailing detected border instead of exposing black pixels or
+     * asking the hardware encoder for an unsupported frame size.
      */
     fun encoderCrop(
         sourceWidth: Int,
         sourceHeight: Int,
         leading: Float,
-        trailing: Float
+        trailing: Float,
+        widthAlignment: Int = 2,
+        heightAlignment: Int = 2
     ): EncoderCrop? {
         if (sourceWidth < 2 || sourceHeight < 2) return null
         val safeLeading = normalizedCrop(leading)
         val safeTrailing = normalizedCrop(trailing)
         if (safeLeading + safeTrailing >= 0.88f) return null
+        val safeWidthAlignment = widthAlignment.coerceAtLeast(2)
+        val safeHeightAlignment = heightAlignment.coerceAtLeast(2)
 
         var leftPixels = (sourceWidth * safeLeading).roundToInt().coerceIn(0, sourceWidth - 2)
         var rightPixels = (sourceWidth * safeTrailing).roundToInt().coerceIn(0, sourceWidth - leftPixels - 2)
@@ -170,16 +174,21 @@ object CropMath {
             if (rightPixels < sourceWidth - leftPixels - 2) rightPixels++ else leftPixels++
             width = sourceWidth - leftPixels - rightPixels
         }
-
-        var bottomPixels = 0
-        var topPixels = 0
-        var height = sourceHeight
-        if (height % 2 != 0) {
-            // Keep the crop horizontal in the UI; remove one bottom row only
-            // when the source itself cannot produce an even H.264 frame.
-            bottomPixels = 1
-            height--
+        val alignedWidth = width - width % safeWidthAlignment
+        if (alignedWidth < 2) return null
+        if (alignedWidth < width) {
+            // Take the extra pixels from the trailing edge, where the
+            // detector already found the black border. This keeps the output
+            // inside the requested content while satisfying codec alignment.
+            rightPixels += width - alignedWidth
+            width = alignedWidth
         }
+
+        val bottomPixels: Int
+        var topPixels = 0
+        val height = sourceHeight - sourceHeight % safeHeightAlignment
+        if (height < 2) return null
+        bottomPixels = sourceHeight - height
         if (width < 2 || height < 2) return null
         return EncoderCrop(
             left = leftPixels.toFloat() / sourceWidth,

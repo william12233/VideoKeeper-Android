@@ -77,6 +77,17 @@ object HardwareCodecInspector {
 
     fun hardwareEncoderInfos(mime: String): List<MediaCodecInfo> = codecInfos(mime, true)
 
+    /** Returns the first hardware encoder's advertised pixel alignment. */
+    fun hardwareEncoderAlignment(mime: String): Pair<Int, Int> =
+        codecInfos(mime, true).asSequence().mapNotNull { info ->
+            runCatching {
+                info.getCapabilitiesForType(mime).videoCapabilities?.let { capabilities ->
+                    capabilities.widthAlignment.coerceAtLeast(2) to
+                        capabilities.heightAlignment.coerceAtLeast(2)
+                }
+            }.getOrNull()
+        }.firstOrNull() ?: (2 to 2)
+
     fun hardwareEncoderInfos(
         mime: String,
         width: Int,

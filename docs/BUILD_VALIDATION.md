@@ -18,13 +18,13 @@
 
 結果：
 
-- `:app:testDebugUnitTest` 成功：25 tests，0 failed、0 error、0 skipped；包含裁切狀態篩選、批次進度換算、手動裁切滑桿範圍與輸出品質碼率。
+- `:app:testDebugUnitTest` 成功：26 tests，0 failed、0 error、0 skipped；包含裁切狀態篩選、批次進度換算、手動裁切滑桿範圍、硬體宏區塊尺寸對齊與輸出品質碼率。
 - 純 Kotlin 覆蓋固定/不對稱黑邊、片頭全黑、直式來源、旋轉 metadata、動態不穩定、偶數輸出尺寸、時間偏移指紋、Room codec、批次通知進度與輸出檔名規則。
 - `:app:compileDebugAndroidTestKotlin` 成功；instrumentation test 會檢查 APK 沒有 INTERNET 權限、宣告 mediaProcessing service，並建立進度通知頻道。
 - `:app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - `:app:lintDebug` 成功；只保留 Android SDK/依賴版本提醒與 Compose/Media3 API 相容性警告，沒有 lint error。
-- APK SHA-256（本次本機 Debug 產物）：`0aba1342dad89807d6fc0ef1f63544c5404225614a96bd647831bb46c4e9170a`。
-- APK 大小：67,790,147 bytes（約 64.6 MiB）。
+- APK SHA-256（本次本機 Debug 產物）：`7f0d93e9f0172ebe9a65de9d74cb5912b717bdb93d70c7e2921d243309681088`。
+- APK 大小：67,794,387 bytes（約 64.6 MiB）。
 - `apksigner verify --verbose --print-certs` 成功：APK Signature Scheme v2；簽章者為 Android Debug，沒有使用正式 Release 私鑰。
 - CI workflow 會對 Debug APK 再執行 `apksigner verify`、產生 `SHA256SUMS.txt`，並上傳 `VideoKeeper-debug-APK` artifact。
 - 佇列頁上方會以持久化批次資料顯示整批進度；Activity 從通知重建後仍可恢復 `完成數/總數` 與目前項目進度。裁切頁提供待分析、分析中、待確認、不需裁切、已確認／裁切、未勾選及失敗／不支援篩選。
@@ -41,7 +41,7 @@
 - HDR/SDR、特殊 MKV/AV1/HEVC、旋轉 metadata 的實際輸出與聲畫播放。
 - instrumentation test 的 connected execution；目前只完成測試 APK 編譯。
 
-上述限制已在 App「設定」和 Release notes 說明。沒有可用硬體影片解碼器或 H.264 編碼器時，程式會在開始 Transformer 前失敗並保留來源；輸出尺寸會先對齊硬體常見的偶數限制，AAC 音訊則優先直接複製，非相容音訊才允許 Media3 的 AAC 軟體編碼。若硬體初始化偶發失敗，會在同一硬體路徑重新建立一次，仍失敗才略過該支影片。
+上述限制已在 App「設定」和 Release notes 說明。沒有可用硬體影片解碼器或 H.264 編碼器時，程式會在開始 Transformer 前失敗並保留來源；輸出尺寸會先對齊硬體常見的偶數限制，硬體初始化拒絕裁切寬度時會再以 16 像素寬度對齊重試，AAC 音訊則優先直接複製，非相容音訊才允許 Media3 的 AAC 軟體編碼。若硬體初始化仍失敗，會清除暫存檔並略過該支影片。
 
 ## 正式簽章與 Release
 

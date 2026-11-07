@@ -54,7 +54,9 @@ class ExportQueue(
         val info: VideoInfo,
         val crop: CropMath.EncoderCrop,
         val capability: HardwareCapability,
-        val bitrate: Int
+        val bitrate: Int,
+        val encoderWidthAlignment: Int,
+        val encoderHeightAlignment: Int
     )
 
     companion object {
@@ -94,11 +96,14 @@ class ExportQueue(
         io.execute {
             val preparation = runCatching {
                 val info = analyzer.readInfo(android.net.Uri.parse(item.uriString))
+                val advertisedAlignment = HardwareCodecInspector.hardwareEncoderAlignment(HardwareCodecInspector.H264)
                 val crop = CropMath.encoderCrop(
                     sourceWidth = info.width,
                     sourceHeight = info.height,
                     leading = item.left,
-                    trailing = item.right
+                    trailing = item.right,
+                    widthAlignment = advertisedAlignment.first,
+                    heightAlignment = advertisedAlignment.second
                 ) ?: error("來源影片尺寸或裁切範圍無效，未建立輸出檔")
                 val bitrate = quality.bitrate(info, info.width, info.height)
                 val capability = HardwareCodecInspector.inspect(
@@ -108,7 +113,68 @@ class ExportQueue(
                     outputHeight = crop.outputHeight,
                     frameRate = info.frameRate
                 )
-                Preparation(info, crop, capability, bitrate)
+                if (capability.supported) {
+                    Preparation(
+                        info,
+                        crop,
+                        capability,
+                        bitrate,
+                        advertisedAlignment.first,
+                        advertisedAlignment.second
+                    )
+                } else {
+                    // Some Qualcomm drivers advertise a 2-pixel alignment but
+                    // reject otherwise valid H.264 frame sizes at configure
+                    // time. Try a conservative macroblock-aligned crop before
+                    // reporting the device as unsupported.
+                    val safeCrop = CropMath.encoderCrop(
+                        sourceWidth = info.width,
+                        sourceHeight = info.height,
+                        leading = item.left,
+                        trailing = item.right,
+                        widthAlignment = maxOf(16, advertisedAlignment.first),
+                        heightAlignment = advertisedAlignment.second
+                    )
+                    if (safeCrop != null &&
+                        (safeCrop.outputWidth != crop.outputWidth || safeCrop.outputHeight != crop.outputHeight)
+                    ) {
+                        val safeCapability = HardwareCodecInspector.inspect(
+                            context = context,
+                            uri = android.net.Uri.parse(item.uriString),
+                            outputWidth = safeCrop.outputWidth,
+                            outputHeight = safeCrop.outputHeight,
+                            frameRate = info.frameRate
+                        )
+                        if (safeCapability.supported) {
+                            Preparation(
+                                info,
+                                safeCrop,
+                                safeCapability,
+                                bitrate,
+                                advertisedAlignment.first,
+                                advertisedAlignment.second
+                            )
+                        } else {
+                            Preparation(
+                                info,
+                                crop,
+                                capability,
+                                bitrate,
+                                advertisedAlignment.first,
+                                advertisedAlignment.second
+                            )
+                        }
+                    } else {
+                        Preparation(
+                            info,
+                            crop,
+                            capability,
+                            bitrate,
+                            advertisedAlignment.first,
+                            advertisedAlignment.second
+                        )
+                    }
+                }
             }
             handler.post {
                 if (cancelled || finished) return@post
@@ -224,7 +290,7 @@ class ExportQueue(
                             preparation = preparation,
                             attempt = attempt,
                             output = output,
-                            reason = readableError(exportException)
+                            reason = readableError(exportException, preparation)
                         )
                     }
                 })
@@ -253,17 +319,36 @@ class ExportQueue(
         output.delete()
         if (finished || cancelled || current?.id != item.id) return
         if (attempt + 1 < MAX_CODEC_ATTEMPTS) {
+            val retryPreparation = if (attempt == 0) {
+                val safeCrop = CropMath.encoderCrop(
+                    sourceWidth = preparation.info.width,
+                    sourceHeight = preparation.info.height,
+                    leading = item.left,
+                    trailing = item.right,
+                    widthAlignment = maxOf(16, preparation.encoderWidthAlignment),
+                    heightAlignment = retryHeightAlignment(preparation)
+                )
+                if (safeCrop != null) preparation.copy(crop = safeCrop) else preparation
+            } else {
+                preparation
+            }
             onUpdate(
                 item.copy(
                     state = QueueState.RUNNING,
                     progress = 0,
-                    error = "硬體編碼器暫時拒絕目前設定，正在重試…",
+                    error = if (retryPreparation.crop.outputWidth != preparation.crop.outputWidth ||
+                        retryPreparation.crop.outputHeight != preparation.crop.outputHeight
+                    ) {
+                        "硬體編碼器拒絕目前尺寸，改用對齊尺寸重試…"
+                    } else {
+                        "硬體編碼器暫時拒絕目前設定，正在重試…"
+                    },
                     updatedAt = now()
                 )
             )
             handler.postDelayed({
                 if (!finished && !cancelled && current?.id == item.id) {
-                    startTransformer(item, preparation, attempt + 1)
+                    startTransformer(item, retryPreparation, attempt + 1)
                 }
             }, RETRY_DELAY_MS)
         } else {
@@ -386,7 +471,7 @@ class ExportQueue(
         handler.postDelayed({ postProgress() }, 600L)
     }
 
-    private fun readableError(error: ExportException): String {
+    private fun readableError(error: ExportException, preparation: Preparation): String {
         val category = when (error.errorCode) {
             ExportException.ERROR_CODE_ENCODER_INIT_FAILED -> "硬體編碼器初始化失敗"
             ExportException.ERROR_CODE_ENCODING_FAILED -> "硬體影片編碼失敗"
@@ -395,8 +480,27 @@ class ExportQueue(
             else -> "硬體轉檔失敗"
         }
         val codec = error.codecInfo?.name?.takeIf { it.isNotBlank() }?.let { "（$it）" } ?: ""
-        return "$category$codec；已重試仍失敗，未建立正式輸出檔"
+        val info = preparation.info
+        val audio = when {
+            !info.hasAudio -> "無音訊"
+            HardwareCodecInspector.canCopyAudio(info.audioMime) -> "AAC 音訊複製"
+            else -> "音訊轉 AAC"
+        }
+        return "$category$codec；輸出 ${preparation.crop.outputWidth}×${preparation.crop.outputHeight}、${info.frameRate} fps、$audio；已重試仍失敗，未建立正式輸出檔"
     }
+
+    /**
+     * H.264 drivers often need a macroblock-aligned cropped width, but a
+     * visible 1080-pixel height is commonly valid even though its stride is
+     * padded internally. Do not remove visible rows just to satisfy the
+     * conservative width retry.
+     */
+    private fun retryHeightAlignment(preparation: Preparation): Int =
+        if (preparation.info.height >= 16 && preparation.info.height % 16 == 0) {
+            maxOf(16, preparation.encoderHeightAlignment)
+        } else {
+            preparation.encoderHeightAlignment.coerceAtLeast(2)
+        }
 
     private fun compactMessage(message: String?): String =
         message?.lineSequence()?.firstOrNull()?.take(220) ?: "未知錯誤"
