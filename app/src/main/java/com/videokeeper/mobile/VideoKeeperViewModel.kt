@@ -121,8 +121,13 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         persistTreeGrant(uri)
         sourceFolderUri.value = uri
         sourceFolderName.value = displayName ?: "影片資料夾"
-        destinationFolderUri.value = uri
-        destinationFolderName.value = displayName ?: "影片資料夾"
+        // Use the source as the first-run default only. Once the user has
+        // chosen a separate output tree, importing another source folder must
+        // never overwrite that explicit destination choice.
+        if (destinationFolderUri.value == null) {
+            destinationFolderUri.value = uri
+            destinationFolderName.value = displayName ?: "影片資料夾"
+        }
         saveFolders()
         selectTab(AppTab.IMPORT)
         startOperation(LongOperationKind.IMPORT, "正在掃描資料夾與子資料夾…") {
