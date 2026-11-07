@@ -466,12 +466,28 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun cancelQueue() {
+        if (!QueueStore.hasActiveQueue(app)) {
+            status.value = "目前沒有進行中的工作"
+            reloadQueue()
+            return
+        }
         val error = QueueStore.cancel(app)
         status.value = if (error == null) {
-            "已要求取消目前轉檔；不完整輸出會被清除"
+            "已送出取消要求；正在停止目前工作並清除不完整輸出"
         } else {
             "無法取消本機工作：${error.message ?: "Android 未允許背景處理"}"
         }
+    }
+
+    fun clearQueue() {
+        if (QueueStore.hasActiveQueue(app)) {
+            status.value = "目前仍有工作進行中，請先取消工作"
+            return
+        }
+        QueueStore.clearQueue(app)
+        queue.clear()
+        NotificationHelper.cancelProgress(app)
+        status.value = "已清除佇列紀錄；來源與輸出影片未被刪除"
     }
 
     fun croppedSourceDeleteCount(): Int = queue.count { isCroppedSuccessfulItem(it) && !it.sourceDeleted }

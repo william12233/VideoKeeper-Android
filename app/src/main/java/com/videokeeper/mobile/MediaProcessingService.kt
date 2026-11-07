@@ -20,8 +20,28 @@ class MediaProcessingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             QueueStore.ACTION_CANCEL -> {
-                queue?.cancel()
-                if (queue == null) stopService()
+                val activeQueue = queue
+                if (activeQueue != null) {
+                    activeQueue.cancel()
+                } else {
+                    // Recover from a service restart or a stale queue record:
+                    // cancellation must still leave no item looking runnable.
+                    QueueStore.load(this)
+                        .filter { it.state == QueueState.QUEUED || it.state == QueueState.RUNNING }
+                        .forEach { item ->
+                            QueueStore.update(
+                                this,
+                                item.copy(
+                                    state = QueueState.CANCELLED,
+                                    progress = 0,
+                                    error = "使用者取消工作",
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    QueueStore.clearActiveBatch(this)
+                    stopService()
+                }
                 return START_NOT_STICKY
             }
             QueueStore.ACTION_START_SESSION -> {

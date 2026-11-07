@@ -312,39 +312,23 @@ private fun ImportScreen(
             }
         }
         item {
-            FolderCard(
-                title = "來源資料夾",
-                name = vm.sourceFolderName.value ?: "尚未選取（也可直接選取多部影片）",
-                icon = Icons.Outlined.FolderOpen
-            )
-        }
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = VideoKeeperPalette.card),
-                shape = RoundedCornerShape(18.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Storage, null, tint = VideoKeeperPalette.accent)
-                        Spacer(Modifier.width(9.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("輸出位置", fontWeight = FontWeight.Bold)
-                            Text(
-                                vm.destinationFolderName.value ?: "請選擇輸出資料夾",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        SecondaryButton("選擇", { destinationLauncher.launch(null) })
-                    }
-                    Text(
-                        "輸出會建立為新的 MP4，不會覆蓋或刪除來源；轉檔失敗時會清除不完整檔案。",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                FolderCard(
+                    title = "來源資料夾",
+                    name = vm.sourceFolderName.value ?: "尚未選取",
+                    icon = Icons.Outlined.FolderOpen,
+                    modifier = Modifier.weight(1f)
+                )
+                FolderCard(
+                    title = "輸出位置",
+                    name = vm.destinationFolderName.value ?: "請選擇資料夾",
+                    icon = Icons.Outlined.Storage,
+                    modifier = Modifier.weight(1f),
+                    action = { destinationLauncher.launch(null) }
+                )
             }
         }
         if (vm.videos.isEmpty()) {
@@ -516,12 +500,19 @@ private fun QueueScreen(vm: VideoKeeperViewModel) {
     val active = vm.queue.any { it.state == QueueState.RUNNING || it.state == QueueState.QUEUED }
     val deletableCount = vm.croppedSourceDeleteCount()
     var confirmDeleteSources by remember { mutableStateOf(false) }
+    var confirmClearQueue by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
+            SecondaryButton(
+                text = "清除佇列",
+                enabled = vm.queue.isNotEmpty() && !active && !vm.busy.value,
+                onClick = { confirmClearQueue = true },
+                modifier = Modifier.fillMaxWidth()
+            )
             if (!active && deletableCount > 0) {
                 SecondaryButton(
                     text = "一鍵刪除已裁切原影片（$deletableCount 支）",
@@ -549,6 +540,22 @@ private fun QueueScreen(vm: VideoKeeperViewModel) {
         }
         if (vm.queue.isEmpty()) item { EmptyCard("佇列是空的", "在黑邊裁切頁完成分析、勾選影片後加入工作。") }
         else items(vm.queue, key = { it.id }) { QueueEntryCard(it) }
+    }
+    if (confirmClearQueue && !active) {
+        AlertDialog(
+            onDismissRequest = { confirmClearQueue = false },
+            title = { Text("清除工作佇列？") },
+            text = { Text("只會移除佇列紀錄，不會刪除來源影片或已輸出的影片。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearQueue = false
+                    vm.clearQueue()
+                }) { Text("清除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearQueue = false }) { Text("取消") }
+            }
+        )
     }
     if (confirmDeleteSources && deletableCount > 0) {
         val names = vm.croppedSourceNames()
@@ -959,14 +966,28 @@ private fun ToolHeader(
 }
 
 @Composable
-private fun FolderCard(title: String, name: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Card(colors = CardDefaults.cardColors(containerColor = VideoKeeperPalette.card), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun FolderCard(
+    title: String,
+    name: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    action: (() -> Unit)? = null
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = VideoKeeperPalette.card),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = VideoKeeperPalette.accent)
-            Spacer(Modifier.width(10.dp))
-            Column {
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(name, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            action?.let {
+                Spacer(Modifier.width(5.dp))
+                SecondaryButton("選擇", it)
             }
         }
     }

@@ -80,10 +80,20 @@ object QueueStore {
         ContextCompat.startForegroundService(context, intent)
     }.exceptionOrNull()
 
+    /** Sends cancellation through the already running service without creating a new FGS. */
     fun cancel(context: Context): Throwable? = runCatching {
         val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_CANCEL)
-        ContextCompat.startForegroundService(context, intent)
+        context.startService(intent)
     }.exceptionOrNull()
+
+    fun clearQueue(context: Context) = synchronized(lock) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY)
+            .remove(ACTIVE_BATCH_KEY)
+            .apply()
+        notifyQueueUpdated(context)
+    }
 
     fun hasActiveQueue(context: Context): Boolean = load(context).any {
         it.state == QueueState.QUEUED || it.state == QueueState.RUNNING
