@@ -93,6 +93,8 @@ object QueueStore {
         put("speed", item.speed.toDouble())
         put("output", item.outputUriString)
         put("error", item.error)
+        put("sourceDeleted", item.sourceDeleted)
+        put("sourceDeleteError", item.sourceDeleteError)
         put("updated", item.updatedAt)
     }
 
@@ -112,6 +114,8 @@ object QueueStore {
         speed = json.optDouble("speed", 0.0).toFloat(),
         outputUriString = json.optString("output").takeIf { it.isNotBlank() && it != "null" },
         error = json.optString("error").takeIf { it.isNotBlank() && it != "null" },
+        sourceDeleted = json.optBoolean("sourceDeleted", false),
+        sourceDeleteError = json.optString("sourceDeleteError").takeIf { it.isNotBlank() && it != "null" },
         updatedAt = json.optLong("updated", System.currentTimeMillis())
     )
 }

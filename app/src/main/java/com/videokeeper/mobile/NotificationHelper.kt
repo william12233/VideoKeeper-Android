@@ -11,7 +11,9 @@ import androidx.core.app.NotificationCompat
 enum class LongOperationKind(val label: String) {
     IMPORT("掃描影片"),
     CROP("黑邊分析"),
-    DUPLICATES("內容去重")
+    DUPLICATES("內容去重"),
+    MOVE("移動影片"),
+    DELETE("刪除原始影片")
 }
 
 /** Converts item-based queue progress into one 0..100 progress bar. */

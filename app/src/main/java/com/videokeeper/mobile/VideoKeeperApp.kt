@@ -249,7 +249,8 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
                 AppTab.CROP -> CropScreen(
                     vm = vm,
                     startExport = { startExport() },
-                    startAnalysis = { runWithNotificationPermission(vm::analyzeCrop) }
+                    startAnalysis = { runWithNotificationPermission(vm::analyzeCrop) },
+                    moveUnselected = { runWithNotificationPermission(vm::moveUnselectedToDestination) }
                 )
                 AppTab.DUPLICATES -> DuplicateScreen(
                     vm = vm,
@@ -278,7 +279,7 @@ private fun ImportScreen(
         item {
             HeroCard(
                 title = "把影片交給管家",
-                body = "選取多部影片或整個資料夾。影片只在手機內讀取，原始檔一律唯讀。"
+                body = "選取多部影片或整個資料夾。影片只在手機內處理；匯出不修改來源，移動或刪除只在你確認後執行。"
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PrimaryButton(
@@ -345,10 +346,12 @@ private fun ImportScreen(
 private fun CropScreen(
     vm: VideoKeeperViewModel,
     startExport: () -> Unit,
-    startAnalysis: () -> Unit
+    startAnalysis: () -> Unit,
+    moveUnselected: () -> Unit
 ) {
     var editorEntry by remember { mutableStateOf<VideoEntry?>(null) }
     val selectedCount = vm.videos.count { it.crop.selected && it.crop.cropped }
+    val moveCount = vm.unselectedMoveCount()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -369,7 +372,7 @@ private fun CropScreen(
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("已選取 $selectedCount 支可裁切影片", fontWeight = FontWeight.Bold, color = VideoKeeperPalette.accent)
                     Text(
-                        "匯出前檢查硬體 H.264 影片路徑；音訊優先直接複製，必要時才以 AAC 軟體編碼，並驗證輸出完整性。",
+                        "匯出前檢查硬體 H.264 影片路徑；音訊優先直接複製，必要時才以 AAC 軟體編碼，並驗證輸出完整性。未勾選影片可另行移動到輸出資料夾。",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -385,6 +388,12 @@ private fun CropScreen(
             )
         }
         item {
+            SecondaryButton(
+                text = "移動未勾選影片到輸出資料夾（$moveCount 支）",
+                enabled = !vm.busy.value && moveCount > 0 && vm.destinationFolderUri.value != null,
+                onClick = moveUnselected,
+                modifier = Modifier.fillMaxWidth()
+            )
             PrimaryButton(
                 text = "加入本機工作佇列（$selectedCount 支）",
                 enabled = !vm.busy.value && selectedCount > 0 && vm.destinationFolderUri.value != null,
@@ -461,11 +470,28 @@ private fun DuplicateScreen(
 @Composable
 private fun QueueScreen(vm: VideoKeeperViewModel) {
     val active = vm.queue.any { it.state == QueueState.RUNNING || it.state == QueueState.QUEUED }
+    val deletableCount = vm.croppedSourceDeleteCount()
+    var confirmDeleteSources by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        item {
+            if (!active && deletableCount > 0) {
+                SecondaryButton(
+                    text = "一鍵刪除已裁切原影片（$deletableCount 支）",
+                    enabled = !vm.busy.value,
+                    onClick = { confirmDeleteSources = true },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "只會刪除已成功產生輸出的來源影片，不會刪除裁切結果；按下後仍會再次確認。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         item {
             ToolHeader(
                 eyebrow = "WORK QUEUE · FOREGROUND SERVICE",
@@ -479,6 +505,30 @@ private fun QueueScreen(vm: VideoKeeperViewModel) {
         }
         if (vm.queue.isEmpty()) item { EmptyCard("佇列是空的", "在黑邊裁切頁完成分析、勾選影片後加入工作。") }
         else items(vm.queue, key = { it.id }) { QueueEntryCard(it) }
+    }
+    if (confirmDeleteSources && deletableCount > 0) {
+        val names = vm.croppedSourceNames()
+        AlertDialog(
+            onDismissRequest = { confirmDeleteSources = false },
+            title = { Text("刪除已裁切原影片？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("這會永久刪除 $deletableCount 支來源影片，只保留新的裁切輸出。")
+                    names.take(10).forEach { Text("• $it", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    if (names.size > 10) Text("另有 ${names.size - 10} 支影片…", fontSize = 12.sp)
+                    Text("此動作無法復原。若來源沒有 SAF 寫入權限，該支會保留並顯示失敗原因。", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDeleteSources = false
+                    vm.deleteCroppedSourceVideos()
+                }) { Text("確認刪除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDeleteSources = false }) { Text("取消") }
+            }
+        )
     }
 }
 
@@ -670,6 +720,10 @@ private fun QueueEntryCard(item: QueueItem) {
                 Text("完成 ${formatDuration(item.elapsedMs)} · 實際處理速度 ${"%.2f".format(Locale.US, item.speed)}x", fontSize = 12.sp, color = VideoKeeperPalette.safe)
             }
             item.error?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
+            if (item.sourceDeleted) {
+                Text("原始影片已刪除，裁切輸出已保留", fontSize = 11.sp, color = VideoKeeperPalette.safe)
+            }
+            item.sourceDeleteError?.let { Text("原始影片刪除失敗：$it", fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
             Text("裁切左 ${percent(item.left)} · 右 ${percent(item.right)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

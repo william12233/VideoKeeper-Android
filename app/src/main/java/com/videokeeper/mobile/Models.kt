@@ -101,6 +101,8 @@ data class QueueItem(
     val speed: Float = 0f,
     val outputUriString: String? = null,
     val error: String? = null,
+    val sourceDeleted: Boolean = false,
+    val sourceDeleteError: String? = null,
     val updatedAt: Long = System.currentTimeMillis()
 )
 

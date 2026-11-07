@@ -204,6 +204,64 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun unselectedMoveCount(): Int = destinationFolderUri.value?.let { destination ->
+        moveCandidates(destination).size
+    } ?: 0
+
+    fun moveUnselectedToDestination() {
+        val destination = destinationFolderUri.value ?: run {
+            status.value = "請先選擇輸出資料夾"
+            return
+        }
+        val candidates = moveCandidates(destination)
+        if (candidates.isEmpty()) {
+            status.value = "沒有需要移動的未勾選影片"
+            return
+        }
+        startOperation(LongOperationKind.MOVE, "準備移動 ${candidates.size} 支未勾選影片…") {
+            var moved = 0
+            var failed = 0
+            candidates.forEachIndexed { index, original ->
+                if (stopping.get()) return@forEachIndexed
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        SafFileOperations.move(
+                            context = app,
+                            source = original.uri,
+                            destinationTree = destination,
+                            sourceTree = sourceFolderUri.value
+                        )
+                    }
+                }
+                result.fold(
+                    onSuccess = { movedUri ->
+                        persistReadGrant(movedUri)
+                        runCatching { analyzer.removeFingerprint(original.uri) }
+                        val movedEntry = original.copy(
+                            uri = movedUri,
+                            relativePath = original.name,
+                            error = null
+                        )
+                        replace(movedEntry)
+                        replaceDuplicateReferences(original.id, movedEntry)
+                        moved++
+                    },
+                    onFailure = { error ->
+                        failed++
+                        replace(original.copy(error = "移動失敗：${error.message ?: "儲存空間拒絕操作"}"))
+                    }
+                )
+                progress.intValue = (index + 1) * 100 / candidates.size
+                status.value = "移動未勾選影片 ${index + 1}/${candidates.size}：成功 $moved・失敗 $failed"
+            }
+            status.value = if (stopping.get()) {
+                "移動已取消：已完成 $moved 支、失敗 $failed 支"
+            } else {
+                "移動完成：成功 $moved 支、失敗 $failed 支"
+            }
+        }
+    }
+
     fun analyzeDuplicates() {
         if (videos.size < 2) {
             status.value = "至少加入兩支影片才能比對"
@@ -406,6 +464,56 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun croppedSourceDeleteCount(): Int = queue.count { isCroppedSuccessfulItem(it) && !it.sourceDeleted }
+
+    fun croppedSourceNames(): List<String> = queue
+        .filter { isCroppedSuccessfulItem(it) && !it.sourceDeleted }
+        .map { it.name }
+
+    fun deleteCroppedSourceVideos() {
+        val candidates = queue.filter { isCroppedSuccessfulItem(it) && !it.sourceDeleted }
+        if (candidates.isEmpty()) {
+            status.value = "沒有可刪除的已裁切原影片"
+            return
+        }
+        startOperation(LongOperationKind.DELETE, "準備刪除 ${candidates.size} 支已裁切原影片…") {
+            var deleted = 0
+            var failed = 0
+            candidates.forEachIndexed { index, item ->
+                if (stopping.get()) return@forEachIndexed
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        check(DocumentsContract.deleteDocument(app.contentResolver, Uri.parse(item.uriString))) {
+                            "儲存空間拒絕刪除"
+                        }
+                    }
+                }
+                val updated = result.fold(
+                    onSuccess = {
+                        deleted++
+                        item.copy(sourceDeleted = true, sourceDeleteError = null, updatedAt = System.currentTimeMillis())
+                    },
+                    onFailure = { error ->
+                        failed++
+                        item.copy(
+                            sourceDeleteError = sourceDeleteReason(error),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                )
+                replaceQueueItem(updated)
+                QueueStore.update(app, updated)
+                progress.intValue = (index + 1) * 100 / candidates.size
+                status.value = "刪除已裁切原影片 ${index + 1}/${candidates.size}：成功 $deleted・失敗 $failed"
+            }
+            status.value = if (stopping.get()) {
+                "刪除已取消：成功 $deleted 支、失敗 $failed 支"
+            } else {
+                "刪除完成：成功 $deleted 支、失敗 $failed 支"
+            }
+        }
+    }
+
     fun setQuality(value: ExportQuality) {
         quality.value = value
         app.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
@@ -468,10 +576,11 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         operation?.cancel()
         operation = null
         busy.value = false
-        status.value = if (kind == LongOperationKind.IMPORT) {
-            "已取消匯入，保留目前已完成的結果"
-        } else {
-            "已取消分析，保留目前已完成的結果"
+        status.value = when (kind) {
+            LongOperationKind.IMPORT -> "已取消匯入，保留目前已完成的結果"
+            LongOperationKind.MOVE -> "已取消移動，保留目前已完成的結果"
+            LongOperationKind.DELETE -> "已取消刪除，保留目前已完成的結果"
+            else -> "已取消分析，保留目前已完成的結果"
         }
     }
 
@@ -538,6 +647,41 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
     private fun replace(entry: VideoEntry) {
         val index = videos.indexOfFirst { it.id == entry.id }
         if (index >= 0) videos[index] = entry
+    }
+
+    private fun replaceDuplicateReferences(id: String, updated: VideoEntry) {
+        if (duplicates.isEmpty()) return
+        val replaced = duplicates.map { pair ->
+            pair.copy(
+                first = if (pair.first.id == id) updated else pair.first,
+                second = if (pair.second.id == id) updated else pair.second
+            )
+        }
+        duplicates.clear()
+        duplicates.addAll(replaced)
+    }
+
+    private fun replaceQueueItem(item: QueueItem) {
+        val index = queue.indexOfFirst { it.id == item.id }
+        if (index >= 0) queue[index] = item else queue += item
+    }
+
+    private fun moveCandidates(destination: Uri): List<VideoEntry> = videos.filter { entry ->
+        !entry.crop.selected &&
+            entry.cropState != AnalysisState.PENDING &&
+            entry.cropState != AnalysisState.RUNNING &&
+            !sourceAndDestinationAreSameFolder(entry.uri, destination)
+    }
+
+    private fun isCroppedSuccessfulItem(item: QueueItem): Boolean =
+        item.state == QueueState.SUCCEEDED &&
+            !item.outputUriString.isNullOrBlank() &&
+            item.left + item.right > 0.015f
+
+    private fun sourceDeleteReason(error: Throwable): String = if (error is SecurityException) {
+        "沒有刪除權限，請重新授予來源資料夾權限"
+    } else {
+        "儲存空間拒絕刪除或檔案已不存在"
     }
 
     private fun find(id: String): VideoEntry? = videos.firstOrNull { it.id == id }
