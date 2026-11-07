@@ -353,6 +353,9 @@ private fun CropScreen(
     var cropFilter by remember { mutableStateOf(CropFilter.ALL) }
     val selectedCount = vm.videos.count { it.crop.selected && it.crop.cropped }
     val moveCount = vm.unselectedMoveCount()
+    val unselectedCount = vm.unselectedAnalyzedCount()
+    val waitingAnalysisCount = vm.unselectedWaitingAnalysisCount()
+    val alreadyInDestinationCount = vm.unselectedAlreadyInDestinationCount()
     val filteredVideos = vm.videos.filter { matchesCropFilter(it, cropFilter) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -416,12 +419,34 @@ private fun CropScreen(
             }
         }
         item {
+            val moveText = when {
+                vm.destinationFolderUri.value == null -> "移動未勾選影片（請先設定輸出資料夾）"
+                moveCount > 0 -> "移動未勾選影片到輸出資料夾（$moveCount 支）"
+                unselectedCount > 0 && alreadyInDestinationCount == unselectedCount ->
+                    "未勾選影片已在輸出資料夾（$unselectedCount 支）"
+                unselectedCount > 0 -> "沒有可移動的未勾選影片（$unselectedCount 支）"
+                else -> "沒有已分析的未勾選影片"
+            }
             SecondaryButton(
-                text = "移動未勾選影片到輸出資料夾（$moveCount 支）",
+                text = moveText,
                 enabled = !vm.busy.value && moveCount > 0 && vm.destinationFolderUri.value != null,
                 onClick = moveUnselected,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (alreadyInDestinationCount > 0 && moveCount == 0) {
+                Text(
+                    "目前輸出資料夾與來源相同，這 $alreadyInDestinationCount 支不需要搬移。若要分開保存，請到「匯入」頁選擇其他輸出資料夾。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (waitingAnalysisCount > 0) {
+                Text(
+                    "另有 $waitingAnalysisCount 支尚未完成黑邊分析，分析完成後才可判斷是否需要移動。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             PrimaryButton(
                 text = "加入本機工作佇列（$selectedCount 支）",
                 enabled = !vm.busy.value && selectedCount > 0 && vm.destinationFolderUri.value != null,

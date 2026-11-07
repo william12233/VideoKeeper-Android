@@ -23,12 +23,13 @@
 - `:app:compileDebugAndroidTestKotlin` 成功；instrumentation test 會檢查 APK 沒有 INTERNET 權限、宣告 mediaProcessing service，並建立進度通知頻道。
 - `:app:assembleDebug` 成功，APK：`app/build/outputs/apk/debug/app-debug.apk`。
 - `:app:lintDebug` 成功；只保留 Android SDK/依賴版本提醒與 Compose/Media3 API 相容性警告，沒有 lint error。
-- APK SHA-256（本次本機 Debug 產物）：`82d87eb58ab5cf4a2a093f6890b0a6bd2b2e0cc04d9c899bbcb16d6a88680a32`。
-- APK 大小：67,786,675 bytes（約 64.6 MiB）。
+- APK SHA-256（本次本機 Debug 產物）：`4a2e57b40de549c5a6051a3077b1ebb80f679ce000ee856a7da4b8b71d84c868`。
+- APK 大小：67,790,155 bytes（約 64.6 MiB）。
 - `apksigner verify --verbose --print-certs` 成功：APK Signature Scheme v2；簽章者為 Android Debug，沒有使用正式 Release 私鑰。
 - CI workflow 會對 Debug APK 再執行 `apksigner verify`、產生 `SHA256SUMS.txt`，並上傳 `VideoKeeper-debug-APK` artifact。
 - 佇列頁上方會以持久化批次資料顯示整批進度；Activity 從通知重建後仍可恢復 `完成數/總數` 與目前項目進度。裁切頁提供待分析、分析中、待確認、不需裁切、已確認／裁切、未勾選及失敗／不支援篩選。
 - 匯入頁的來源與輸出資料夾改為並排小卡；取消工作改由現有服務直接接收，清除佇列只移除紀錄、不刪除影片。
+- 裁切頁會區分「未勾選但已在輸出資料夾」、「可移動」與「尚未分析」，避免來源與輸出相同時誤顯示為遺失影片。
 
 ## 尚未執行
 

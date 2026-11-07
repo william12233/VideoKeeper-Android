@@ -216,6 +216,26 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         moveCandidates(destination).size
     } ?: 0
 
+    fun unselectedAnalyzedCount(): Int = videos.count {
+        !it.crop.selected &&
+            it.cropState != AnalysisState.PENDING &&
+            it.cropState != AnalysisState.RUNNING
+    }
+
+    fun unselectedWaitingAnalysisCount(): Int = videos.count {
+        !it.crop.selected &&
+            (it.cropState == AnalysisState.PENDING || it.cropState == AnalysisState.RUNNING)
+    }
+
+    fun unselectedAlreadyInDestinationCount(): Int = destinationFolderUri.value?.let { destination ->
+        videos.count { entry ->
+            !entry.crop.selected &&
+                entry.cropState != AnalysisState.PENDING &&
+                entry.cropState != AnalysisState.RUNNING &&
+                sourceAndDestinationAreSameFolder(entry.uri, destination)
+        }
+    } ?: 0
+
     fun moveUnselectedToDestination() {
         val destination = destinationFolderUri.value ?: run {
             status.value = "請先選擇輸出資料夾"
