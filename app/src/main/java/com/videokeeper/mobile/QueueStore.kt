@@ -16,6 +16,7 @@ object QueueStore {
     const val EXTRA_SESSION_TITLE = "session_title"
     private const val PREFS = "export_queue_v2"
     private const val KEY = "items"
+    private const val ACTIVE_BATCH_KEY = "active_batch_ids"
     private val lock = Any()
 
     fun load(context: Context): List<QueueItem> = synchronized(lock) {
@@ -42,7 +43,31 @@ object QueueStore {
         val index = items.indexOfFirst { it.id == updated.id }
         if (index >= 0) items[index] = updated else items += updated
         save(context, items)
-        context.sendBroadcast(Intent(ACTION_QUEUE_UPDATED).setPackage(context.packageName))
+        notifyQueueUpdated(context)
+    }
+
+    /** Persists the exact queue batch currently being processed by the service. */
+    fun setActiveBatch(context: Context, ids: Collection<String>) = synchronized(lock) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(ACTIVE_BATCH_KEY, ids.toSet())
+            .apply()
+        notifyQueueUpdated(context)
+    }
+
+    fun activeBatchIds(context: Context): Set<String> = synchronized(lock) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(ACTIVE_BATCH_KEY, emptySet())
+            ?.toSet()
+            ?: emptySet()
+    }
+
+    fun clearActiveBatch(context: Context) = synchronized(lock) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(ACTIVE_BATCH_KEY)
+            .apply()
+        notifyQueueUpdated(context)
     }
 
     /**
@@ -76,6 +101,10 @@ object QueueStore {
         val intent = Intent(context, MediaProcessingService::class.java).setAction(ACTION_STOP_SESSION)
         context.startService(intent)
     }.exceptionOrNull()
+
+    private fun notifyQueueUpdated(context: Context) {
+        context.sendBroadcast(Intent(ACTION_QUEUE_UPDATED).setPackage(context.packageName))
+    }
 
     private fun toJson(item: QueueItem) = JSONObject().apply {
         put("id", item.id)

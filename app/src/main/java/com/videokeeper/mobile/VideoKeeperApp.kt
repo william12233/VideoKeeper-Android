@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +113,7 @@ import kotlin.math.max
 fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
     val context = LocalContext.current
     val activeTab by vm.activeTab
+    val queueProgress = vm.queueOverallProgress()
     var pendingNotificationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     val destinationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -202,12 +204,26 @@ fun VideoKeeperApp(vm: VideoKeeperViewModel = viewModel()) {
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = VideoKeeperPalette.background)
                 )
-                if (vm.busy.value) {
+                if (queueProgress != null || vm.busy.value) {
+                    val overall = queueProgress?.percent ?: vm.progress.intValue
                     LinearProgressIndicator(
-                        progress = { vm.progress.intValue / 100f },
+                        progress = { overall.coerceIn(0, 100) / 100f },
                         modifier = Modifier.fillMaxWidth(),
                         color = VideoKeeperPalette.accent,
                         trackColor = VideoKeeperPalette.cardAlt
+                    )
+                }
+                queueProgress?.let { current ->
+                    Text(
+                        buildString {
+                            append("工作佇列 ${current.completedItems}/${current.totalItems} 支")
+                            current.currentItemName?.let { append(" · $it ${current.currentItemProgress}%") }
+                        },
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                        color = VideoKeeperPalette.accent,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 Text(
@@ -350,8 +366,10 @@ private fun CropScreen(
     moveUnselected: () -> Unit
 ) {
     var editorEntry by remember { mutableStateOf<VideoEntry?>(null) }
+    var cropFilter by remember { mutableStateOf(CropFilter.ALL) }
     val selectedCount = vm.videos.count { it.crop.selected && it.crop.cropped }
     val moveCount = vm.unselectedMoveCount()
+    val filteredVideos = vm.videos.filter { matchesCropFilter(it, cropFilter) }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -379,13 +397,39 @@ private fun CropScreen(
                 }
             }
         }
-        if (vm.videos.isEmpty()) item { EmptyCard("先加入影片", "回到「匯入」頁選取影片或資料夾。") }
-        else items(vm.videos, key = { it.id }) { entry ->
-            CropEntryCard(
-                entry = entry,
-                onChecked = { vm.toggleCropSelection(entry.id, it) },
-                onEdit = { editorEntry = entry }
-            )
+        if (vm.videos.isEmpty()) {
+            item { EmptyCard("先加入影片", "回到「匯入」頁選取影片或資料夾。") }
+        } else {
+            item {
+                Text("依分析狀態快速篩選", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    CropFilter.values().forEach { filter ->
+                        val count = vm.videos.count { matchesCropFilter(it, filter) }
+                        FilterChip(
+                            selected = cropFilter == filter,
+                            onClick = { cropFilter = filter },
+                            label = { Text("${filter.label} $count", fontSize = 11.sp) }
+                        )
+                    }
+                }
+            }
+            item { SectionHeader("裁切清單", "${filteredVideos.size}/${vm.videos.size} 支") }
+            if (filteredVideos.isEmpty()) {
+                item { EmptyCard("此狀態沒有影片", "請切換上方篩選條件。") }
+            } else {
+                items(filteredVideos, key = { it.id }) { entry ->
+                    CropEntryCard(
+                        entry = entry,
+                        onChecked = { vm.toggleCropSelection(entry.id, it) },
+                        onEdit = { editorEntry = entry }
+                    )
+                }
+            }
         }
         item {
             SecondaryButton(

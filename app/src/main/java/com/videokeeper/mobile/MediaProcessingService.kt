@@ -47,6 +47,7 @@ class MediaProcessingService : Service() {
                     QueueStore.update(this, item.copy(state = QueueState.FAILED, progress = 0, error = reason))
                 }
             runCatching { stopService() }
+            QueueStore.clearActiveBatch(this)
         }
         return START_NOT_STICKY
     }
@@ -72,9 +73,11 @@ class MediaProcessingService : Service() {
         val pending = stored.filter { it.state == QueueState.QUEUED || it.state == QueueState.RUNNING }
             .map { if (it.state == QueueState.RUNNING) it.copy(state = QueueState.QUEUED, progress = 0) else it }
         if (pending.isEmpty()) {
+            QueueStore.clearActiveBatch(this)
             stopService()
             return
         }
+        QueueStore.setActiveBatch(this, pending.map { it.id })
         pending.forEach { QueueStore.update(this, it) }
         val quality = getSharedPreferences("settings", MODE_PRIVATE)
             .getString("quality", ExportQuality.HIGH.name)
@@ -112,6 +115,7 @@ class MediaProcessingService : Service() {
                 )
             },
             onFinish = {
+                QueueStore.clearActiveBatch(this)
                 queue = null
                 stopService()
             }
@@ -162,6 +166,7 @@ class MediaProcessingService : Service() {
     override fun onDestroy() {
         queue?.cancel()
         queue = null
+        QueueStore.clearActiveBatch(this)
         processingSessionActive = false
         super.onDestroy()
     }

@@ -25,6 +25,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 enum class AppTab { IMPORT, CROP, DUPLICATES, QUEUE, SETTINGS }
 
+data class QueueOverallProgress(
+    val completedItems: Int,
+    val totalItems: Int,
+    val currentItemName: String?,
+    val currentItemProgress: Int,
+    val percent: Int
+)
+
 class VideoKeeperViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val analyzer = Analyzer(application)
@@ -588,6 +596,43 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         queue.clear()
         queue.addAll(QueueStore.load(app))
     }
+
+    /**
+     * Returns progress only while a queue is actually active. Completed queue
+     * history must not leave a permanent 100% bar at the top of the app.
+     * The persisted batch IDs keep this view correct when the Activity is
+     * recreated from the foreground-service notification.
+     */
+    fun queueOverallProgress(): QueueOverallProgress? {
+        val snapshot = queue.toList()
+        if (snapshot.isEmpty()) return null
+        val activeIds = QueueStore.activeBatchIds(app)
+        val persistedBatch = snapshot.filter { it.id in activeIds }
+        val batch = if (persistedBatch.any { it.isQueueActive() }) {
+            persistedBatch
+        } else {
+            snapshot.filter { it.isQueueActive() }
+        }
+        if (batch.isEmpty()) return null
+        val completed = batch.count { it.isQueueTerminal() }
+        val current = batch.firstOrNull { it.state == QueueState.RUNNING }
+        val currentProgress = current?.progress?.coerceIn(0, 100) ?: 0
+        return QueueOverallProgress(
+            completedItems = completed,
+            totalItems = batch.size,
+            currentItemName = current?.name,
+            currentItemProgress = currentProgress,
+            percent = aggregateQueueProgress(batch.size, completed, currentProgress)
+        )
+    }
+
+    private fun QueueItem.isQueueActive(): Boolean =
+        state == QueueState.QUEUED || state == QueueState.RUNNING
+
+    private fun QueueItem.isQueueTerminal(): Boolean =
+        state == QueueState.SUCCEEDED ||
+            state == QueueState.FAILED ||
+            state == QueueState.CANCELLED
 
     fun hardwareSummary(): String {
         val encoders = HardwareCodecInspector.hardwareEncoderNames(HardwareCodecInspector.H264)
