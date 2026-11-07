@@ -280,6 +280,51 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    /** Deletes only after the user confirms a duplicate candidate in the UI. */
+    fun deleteDuplicateVideo(entry: VideoEntry) {
+        if (busy.value) {
+            status.value = "分析進行中，請完成或取消分析後再刪除"
+            return
+        }
+        val uriString = entry.uri.toString()
+        if (QueueStore.load(app).any {
+                it.uriString == uriString &&
+                    (it.state == QueueState.QUEUED || it.state == QueueState.RUNNING)
+            }
+        ) {
+            status.value = "${entry.name} 正在工作佇列中，完成後才能刪除"
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                check(DocumentsContract.deleteDocument(app.contentResolver, entry.uri)) {
+                    "儲存空間拒絕刪除"
+                }
+            }
+            if (result.isSuccess) {
+                runCatching { analyzer.removeFingerprint(entry.uri) }
+                val remainingCache = runCatching { analyzer.fingerprintCacheCount() }.getOrDefault(cacheCount.intValue)
+                withContext(Dispatchers.Main) {
+                    videos.removeAll { it.id == entry.id }
+                    duplicates.removeAll { pair ->
+                        pair.first.id == entry.id || pair.second.id == entry.id
+                    }
+                    cacheCount.intValue = remainingCache
+                    status.value = "已刪除 ${entry.name}；相關相似候選已移除"
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    val reason = if (result.exceptionOrNull() is SecurityException) {
+                        "尚未取得此檔案的刪除權限"
+                    } else {
+                        "儲存空間拒絕刪除或檔案已不存在"
+                    }
+                    status.value = "刪除失敗：$reason；可改用資料夾匯入後再試"
+                }
+            }
+        }
+    }
+
     fun toggleCropSelection(id: String, selected: Boolean) {
         find(id)?.let { replace(it.copy(crop = it.crop.withSelection(selected))) }
     }
@@ -563,6 +608,11 @@ class VideoKeeperViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun persistReadGrant(uri: Uri) {
         runCatching {
+            app.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }.recoverCatching {
             app.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }

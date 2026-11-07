@@ -2,6 +2,8 @@
 
 package com.videokeeper.mobile
 
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -288,10 +290,14 @@ class ExportQueue(
             var elapsed = SystemClock.elapsedRealtime() - startedAt
             try {
                 if (destination == null || !destination.isDirectory) error("輸出資料夾已失效")
-                val safeName = item.name.substringBeforeLast('.', item.name)
-                    .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                    .take(70)
-                val filename = "${safeName}_去黑邊_${UUID.randomUUID().toString().take(8)}.mp4"
+                val sourceUri = Uri.parse(item.uriString)
+                val destinationUri = Uri.parse(item.destinationUriString)
+                val sameFolder = sourceAndDestinationAreSameFolder(sourceUri, destinationUri)
+                val filename = exportFilename(
+                    originalName = item.name,
+                    sameFolder = sameFolder,
+                    uniqueToken = UUID.randomUUID().toString().take(8)
+                )
                 created = destination.createFile("video/mp4", filename)
                     ?: error("無法建立輸出檔案，請檢查資料夾權限與剩餘空間")
                 context.contentResolver.openOutputStream(created!!.uri, "w")!!.use { target ->
@@ -420,3 +426,28 @@ enum class ExportQuality { STANDARD, HIGH, MAXIMUM;
         }
     }
 }
+
+/** Keeps the source name in a separate destination, while avoiding same-folder collisions. */
+internal fun exportFilename(originalName: String, sameFolder: Boolean, uniqueToken: String): String {
+    val safeName = originalName
+        .ifBlank { "影片.mp4" }
+        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        .take(120)
+    if (!sameFolder) return safeName
+    val baseName = safeName.substringBeforeLast('.', safeName)
+    return "${baseName}_去黑邊_$uniqueToken.mp4"
+}
+
+/** Compares SAF document IDs instead of display names, which can be localized or duplicated. */
+internal fun sourceAndDestinationAreSameFolder(source: Uri, destinationTree: Uri): Boolean = runCatching {
+    if (source.authority != destinationTree.authority) return false
+    val sourceDocumentId = DocumentsContract.getDocumentId(source)
+    val destinationDocumentId = DocumentsContract.getTreeDocumentId(destinationTree)
+    val separator = sourceDocumentId.lastIndexOf('/')
+    val sourceParentId = if (separator >= 0) {
+        sourceDocumentId.substring(0, separator)
+    } else {
+        sourceDocumentId.substringBeforeLast(':', sourceDocumentId) + ":"
+    }
+    sourceParentId == destinationDocumentId
+}.getOrDefault(false)

@@ -276,6 +276,10 @@ class Analyzer(private val context: Context) {
         database.fingerprintDao().clear()
     }
 
+    fun removeFingerprint(uri: Uri) {
+        database.fingerprintDao().deleteForUri(uri.toString())
+    }
+
     fun fingerprintCacheCount(): Int = database.fingerprintDao().count()
 
     private fun open(uri: Uri): MediaMetadataRetriever = MediaMetadataRetriever().apply {

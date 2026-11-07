@@ -446,7 +446,12 @@ private fun DuplicateScreen(
         } else {
             groups.forEachIndexed { index, group ->
                 item(key = "group-$index") {
-                    DuplicateGroupCard(index + 1, group)
+                    DuplicateGroupCard(
+                        index = index + 1,
+                        group = group,
+                        deleteEnabled = !vm.busy.value,
+                        onDelete = vm::deleteDuplicateVideo
+                    )
                 }
             }
         }
@@ -519,7 +524,7 @@ private fun SettingsScreen(vm: VideoKeeperViewModel) {
         }
         item {
             SettingsCard(title = "隱私與權限") {
-                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 原始檔唯讀，輸出由你指定資料夾\n✓ 背景工作進度通知，完成後自動關閉（需允許通知權限）", fontSize = 12.sp, color = VideoKeeperPalette.safe)
+                Text("✓ 使用 Android SAF / MediaStore 授權\n✓ 不要求 MANAGE_EXTERNAL_STORAGE\n✓ App 不宣告 INTERNET\n✓ 匯出不修改來源；去重刪除需逐次確認\n✓ 背景工作進度通知，完成後自動關閉（需允許通知權限）", fontSize = 12.sp, color = VideoKeeperPalette.safe)
             }
         }
     }
@@ -571,13 +576,22 @@ private fun CropEntryCard(entry: VideoEntry, onChecked: (Boolean) -> Unit, onEdi
 }
 
 @Composable
-private fun DuplicateGroupCard(index: Int, group: List<DuplicatePair>) {
+private fun DuplicateGroupCard(
+    index: Int,
+    group: List<DuplicatePair>,
+    deleteEnabled: Boolean,
+    onDelete: (VideoEntry) -> Unit
+) {
     val first = group.first()
     val members = buildList {
         add(first.first)
         add(first.second)
         group.drop(1).forEach { pair -> if (none { it.id == pair.first.id }) add(pair.first); if (none { it.id == pair.second.id }) add(pair.second) }
     }
+    val memberKey = members.joinToString("|") { it.id }
+    var pendingDelete by remember(index, memberKey) { mutableStateOf<VideoEntry?>(null) }
+    val shorter = shorterDuplicateCandidate(members)
+    val smaller = smallerDuplicateCandidate(members)
     Card(colors = CardDefaults.cardColors(containerColor = VideoKeeperPalette.card), shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -598,8 +612,46 @@ private fun DuplicateGroupCard(index: Int, group: List<DuplicatePair>) {
             )
             val keep = betterQuality(first.first, first.second)
             Text("建議先保留：${keep.name}（依解析度、碼率、音訊與片長的品質排序；仍請人工播放確認）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("不提供自動刪除。不同片頭、剪輯或相似場景可能影響結果。", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("可依片長或檔案大小選擇刪除候選；每次都會先確認，且只刪除來源影片。", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton(
+                    text = "刪除較短者",
+                    onClick = { shorter?.let { pendingDelete = it } },
+                    enabled = deleteEnabled && shorter != null,
+                    modifier = Modifier.weight(1f)
+                )
+                SecondaryButton(
+                    text = "刪除較小者",
+                    onClick = { smaller?.let { pendingDelete = it } },
+                    enabled = deleteEnabled && smaller != null,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (shorter == null || smaller == null) {
+                Text("片長或檔案大小不足以判斷時，刪除按鈕會停用。", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("確認刪除影片？") },
+            text = {
+                Text(
+                    "將從手機刪除「${target.name}」。\n\n${videoMetadata(target)}\n此動作無法復原，原始影片不會移到垃圾桶。",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    onDelete(target)
+                }) { Text("刪除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            }
+        )
     }
 }
 
@@ -960,6 +1012,20 @@ private fun betterQuality(a: VideoEntry, b: VideoEntry): VideoEntry {
             (info?.bitrate ?: 0).toLong() + if (info?.hasAudio == true) 1_000_000 else 0
     }
     return if (rank(a) >= rank(b)) a else b
+}
+
+private fun shorterDuplicateCandidate(members: List<VideoEntry>): VideoEntry? {
+    val known = members.filter { it.durationMs > 0L }
+    val shortest = known.minByOrNull { it.durationMs } ?: return null
+    val longest = known.maxOfOrNull { it.durationMs } ?: return null
+    return shortest.takeIf { shortest.durationMs < longest }
+}
+
+private fun smallerDuplicateCandidate(members: List<VideoEntry>): VideoEntry? {
+    val known = members.filter { it.bytes > 0L }
+    val smallest = known.minByOrNull { it.bytes } ?: return null
+    val largest = known.maxOfOrNull { it.bytes } ?: return null
+    return smallest.takeIf { smallest.bytes < largest }
 }
 
 private fun buildDuplicateGroups(pairs: List<DuplicatePair>): List<List<DuplicatePair>> {

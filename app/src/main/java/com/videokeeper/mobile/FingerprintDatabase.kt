@@ -35,6 +35,9 @@ interface FingerprintDao {
     @Query("DELETE FROM video_fingerprints")
     fun clear()
 
+    @Query("DELETE FROM video_fingerprints WHERE uri = :uri")
+    fun deleteForUri(uri: String)
+
     @Query("SELECT COUNT(*) FROM video_fingerprints")
     fun count(): Int
 }
